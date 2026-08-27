@@ -1,0 +1,17 @@
+# Minimal SearxNG config for Gruvle Reach's self-hosted research search
+# backend. The stock image disables the JSON output format by default
+# (it's meant for browser use); we re-enable it here because our
+# SearxNGProvider consumes it as a plain API, not a browser UI.
+use_default_settings: true
+
+general:
+  instance_name: "Gruvle Reach Research Search"
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "change-me-searxng-secret"
+  limiter: false

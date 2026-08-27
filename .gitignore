@@ -1,0 +1,43 @@
+# secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# node
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# db
+*.sqlite3
+pgdata/
+
+# os
+.DS_Store
+Thumbs.db
+
+# editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# build
+dist/
+build/
+
+# logs
+*.log

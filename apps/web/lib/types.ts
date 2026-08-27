@@ -1,0 +1,305 @@
+export type OrgRole = "owner" | "admin" | "member" | "viewer";
+export type EvidenceStatus = "fact" | "hypothesis" | "inference" | "unknown";
+export type ICPStatus = "ai_hypothesis" | "founder_confirmed" | "archived";
+export type CompanyFitCategory = "excellent" | "strong" | "potential" | "low_priority";
+export type PipelineStage =
+  | "prospect" | "qualified" | "drafted" | "approved" | "sent" | "replied" | "meeting" | "won" | "lost" | "not_now";
+export type InvestorStage =
+  | "discovered" | "researching" | "shortlisted" | "contacted" | "replied" | "meeting" | "follow_up" | "due_diligence" | "passed" | "invested";
+export type OpportunityType = "customer" | "investor" | "marketing" | "launch" | "community" | "content" | "partnership" | "media" | "event";
+export type ActionStatus = "today" | "upcoming" | "waiting" | "completed" | "snoozed";
+export type ActionCategory = "customer" | "investor" | "marketing" | "content" | "competitor" | "launch";
+export type ContentStatus = "idea" | "draft" | "approved" | "published";
+export type OutreachMessageStatus = "drafted" | "approved" | "sent" | "rejected";
+export type MentionCategory = "positive" | "neutral" | "negative" | "question" | "purchase_intent" | "competitor_comparison" | "feedback";
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface Workspace {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  is_demo: boolean;
+}
+
+export interface Product {
+  id: string;
+  workspace_id: string;
+  name: string;
+  website: string;
+  description: string;
+  category: string;
+  target_markets: string[];
+  target_countries: string[];
+  pricing: string;
+  business_model: string;
+  stage: string;
+  competitors: string[];
+  differentiators: string[];
+  brand_voice: string;
+  cta: string;
+  launch_status: string;
+  is_demo: boolean;
+}
+
+export interface ProductProfile {
+  id: string;
+  product_id: string;
+  product_category: string;
+  primary_problem: string;
+  primary_buyer: string;
+  secondary_buyers: string[];
+  target_industries: string[];
+  use_cases: string[];
+  competitive_categories: string[];
+  keywords: string[];
+  search_queries: string[];
+}
+
+export interface ICPProfile {
+  id: string;
+  product_id: string;
+  name: string;
+  criteria: Record<string, unknown>;
+  score: number;
+  factors: Record<string, number>;
+  status: ICPStatus;
+  created_by: string;
+}
+
+export interface Company {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  name: string;
+  website: string;
+  industry: string;
+  country: string;
+  employee_estimate: string;
+  funding_stage: string;
+  funding_amount: string;
+  technology_signals: string[];
+  growth_signals: string[];
+  potential_pain: string;
+  icp_fit_score: number;
+  icp_fit_category: CompanyFitCategory;
+  manual_score_override: number | null;
+  evidence_ids: string[];
+  source_urls: string[];
+  confidence: EvidenceStatus;
+  pipeline_stage: PipelineStage;
+}
+
+export interface CompanyTrigger {
+  id: string;
+  company_id: string;
+  trigger_type: string;
+  description: string;
+  trigger_date: string | null;
+  source_url: string;
+  confidence: number;
+  relevance_score: number;
+  product_fit_score: number;
+  why_it_matters: string;
+}
+
+export interface Contact {
+  id: string;
+  company_id: string;
+  name: string;
+  role: string;
+  public_profile_url: string;
+  email: string;
+  source: string;
+  confidence: EvidenceStatus;
+  pipeline_stage: PipelineStage;
+}
+
+export interface Investor {
+  id: string;
+  fund_name: string;
+  investor_name: string;
+  investor_type: string;
+  website: string;
+  stage: string[];
+  geography: string[];
+  sector: string[];
+  thesis: string;
+  portfolio: string[];
+  recent_investments: string[];
+  check_size_min: string;
+  check_size_max: string;
+  partner: string;
+  contact_channel: string;
+  source_url: string;
+  confidence: number;
+  is_demo: boolean;
+}
+
+export interface InvestorMatch {
+  id: string;
+  product_id: string;
+  investor_id: string;
+  fit_score: number;
+  reasons: { reason: string; factor: string }[];
+  factors: Record<string, number>;
+}
+
+export interface Opportunity {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  type: OpportunityType;
+  title: string;
+  description: string;
+  status: string;
+  audience: string;
+  reach_estimate: string;
+  submission_method: string;
+  cost: string;
+  deadline: string | null;
+  promotion_rules: string;
+}
+
+export interface Campaign {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  name: string;
+  goal: string;
+  audience_description: string;
+  status: string;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export interface ContentVariant {
+  id: string;
+  content_id: string;
+  channel: string;
+  body: string;
+  status: ContentStatus;
+}
+
+export interface ContentItem {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  idea: string;
+  status: ContentStatus;
+  source_idea_id: string | null;
+  variants: ContentVariant[];
+}
+
+export interface OutreachMessage {
+  id: string;
+  outreach_id: string;
+  draft_body: string;
+  personalization_evidence: { field: string; value: string }[];
+  status: OutreachMessageStatus;
+}
+
+export interface Outreach {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  target_type: string;
+  target_id: string;
+  channel: string;
+  status: PipelineStage;
+  messages: OutreachMessage[];
+}
+
+export interface Competitor {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  name: string;
+  website: string;
+  notes: string;
+  last_scanned_at: string | null;
+}
+
+export interface CompetitorChange {
+  id: string;
+  competitor_id: string;
+  change_type: string;
+  description: string;
+  detected_at: string;
+  source_url: string;
+  potential_impact: string;
+  recommended_response: string;
+}
+
+export interface BrandMention {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  keyword: string;
+  source_url: string;
+  excerpt: string;
+  category: MentionCategory;
+  relevance_score: number;
+  recommended_action: string;
+  detected_at: string;
+}
+
+export interface ActionItem {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  title: string;
+  description: string;
+  category: ActionCategory;
+  why: string;
+  impact: string;
+  effort: string;
+  evidence_ids: string[];
+  expected_value_score: number;
+  status: ActionStatus;
+  requires_approval: boolean;
+  related_entity_type: string;
+  related_entity_id: string | null;
+  deadline: string | null;
+}
+
+export interface BrandBrain {
+  id: string;
+  workspace_id: string;
+  product_id: string | null;
+  voice: string;
+  tone: string;
+  positioning: string;
+  key_messages: string[];
+  words_to_use: string[];
+  words_to_avoid: string[];
+  claims: string[];
+  proof_points: string[];
+  founder_story: string;
+  product_facts: string[];
+}
+
+export interface IntegrationCatalogEntry {
+  provider_name: string;
+  provider_type: string;
+  configured: boolean;
+  connected: boolean;
+  capabilities: Record<string, unknown>;
+  notes: string;
+}
+
+export interface DashboardAnalytics {
+  qualified_prospects: number;
+  outreach_sent: number;
+  outreach_replied: number;
+  meetings: number;
+  customers_won: number;
+  investor_conversations: number;
+  open_opportunities: number;
+  actions_today: number;
+}

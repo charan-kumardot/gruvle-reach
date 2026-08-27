@@ -1,0 +1,85 @@
+name: gruvle-reach
+
+services:
+  # Optional local Postgres — not needed if DATABASE_URL points at Supabase/managed Postgres.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gruvle_reach
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Free, self-hosted, no-API-key metasearch engine used by the default SearchProvider.
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "8888:8080"
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8888/
+    volumes:
+      - searxng-data:/etc/searxng
+      - ./infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+  api:
+    build:
+      context: ./apps/api
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SEARXNG_BASE_URL: http://searxng:8080
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - searxng
+    volumes:
+      - ./apps/api:/app
+
+  worker:
+    build:
+      context: ./apps/api
+    command: celery -A app.workers.celery_app worker --beat --loglevel=info
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SEARXNG_BASE_URL: http://searxng:8080
+    depends_on:
+      - redis
+      - searxng
+    volumes:
+      - ./apps/api:/app
+
+  web:
+    build:
+      context: ./apps/web
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  searxng-data:

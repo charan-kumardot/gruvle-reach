@@ -1,0 +1,41 @@
+"""Import every model module so SQLAlchemy's mapper registry and Alembic
+autogenerate see the full schema regardless of which module triggers import."""
+from app.db.models import (  # noqa: F401
+    action,
+    ai_run,
+    audit,
+    brand,
+    campaign,
+    company,
+    competitor,
+    content,
+    enums,
+    integration,
+    investor,
+    notification,
+    opportunity,
+    outreach,
+    product,
+    research,
+    tenancy,
+)
+
+__all__ = [
+    "action",
+    "ai_run",
+    "audit",
+    "brand",
+    "campaign",
+    "company",
+    "competitor",
+    "content",
+    "enums",
+    "integration",
+    "investor",
+    "notification",
+    "opportunity",
+    "outreach",
+    "product",
+    "research",
+    "tenancy",
+]
