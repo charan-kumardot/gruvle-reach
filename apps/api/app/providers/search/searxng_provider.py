@@ -23,6 +23,7 @@ class SearxNGProvider(SearchProvider):
             resp = httpx.get(
                 f"{self._base_url}/search",
                 params={"q": query, "format": "json"},
+                headers={"User-Agent": "GruvleReachResearchBot/1.0"},
                 timeout=20,
             )
             resp.raise_for_status()
