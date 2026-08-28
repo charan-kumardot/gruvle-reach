@@ -14,7 +14,9 @@ search:
 
 server:
   secret_key: "0d5a8a1a6651b1300cfd8c33f0718ebcdc353a01266c661f151b7c0958376a91"
-  limiter: false
-  # This instance is deployed as a Render private service (no public
-  # ingress) — reachable only by other services in the same account, so
-  # disabling the browser-facing rate limiter here is safe.
+  # Render's free tier only allows public web services (no private-service
+  # networking), so this instance is reachable at a public onrender.com URL.
+  # Keep the limiter on to reduce abuse-as-open-proxy risk from anyone who
+  # finds the URL — our own backend's query volume is nowhere near what
+  # would trip it.
+  limiter: true
