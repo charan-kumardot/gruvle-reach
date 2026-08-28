@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+.env.deploy
 *.pem
 *.key
 
@@ -34,6 +35,7 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.claude/
 
 # build
 dist/
