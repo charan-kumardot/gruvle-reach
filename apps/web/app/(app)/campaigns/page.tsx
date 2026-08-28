@@ -20,7 +20,7 @@ export default function CampaignsPage() {
   const { workspace, product } = useAppStore();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<Campaign | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", goal: "", audience_description: "" });
 
   const { data: campaigns } = useQuery({
@@ -59,7 +59,7 @@ export default function CampaignsPage() {
       {campaigns && campaigns.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {campaigns.map((c) => (
-            <Card key={c.id} className="cursor-pointer" onClick={() => setSelected(c)}>
+            <Card key={c.id} className="cursor-pointer" onClick={() => setSelectedId(c.id)}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>{c.name}</CardTitle>
@@ -98,7 +98,10 @@ export default function CampaignsPage() {
         </DialogContent>
       </Dialog>
 
-      <CampaignDetailDialog campaign={selected} onClose={() => setSelected(null)} />
+      <CampaignDetailDialog
+        campaign={campaigns?.find((c) => c.id === selectedId) ?? null}
+        onClose={() => setSelectedId(null)}
+      />
     </div>
   );
 }

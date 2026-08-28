@@ -20,7 +20,12 @@ export function useBootstrap() {
   });
 
   useEffect(() => {
-    if (orgs && orgs.length > 0 && !organization) setOrganization(orgs[0]);
+    if (!orgs || orgs.length === 0) return;
+    // A persisted organization (from localStorage) can go stale — deleted,
+    // or this user no longer a member. Re-validate against the live list
+    // on every load rather than trusting the cache just because it's set.
+    if (organization && orgs.some((o) => o.id === organization.id)) return;
+    setOrganization(orgs[0]);
   }, [orgs, organization, setOrganization]);
 
   const { data: workspaces } = useQuery({
@@ -30,7 +35,9 @@ export function useBootstrap() {
   });
 
   useEffect(() => {
-    if (workspaces && workspaces.length > 0 && !workspace) setWorkspace(workspaces[0]);
+    if (!workspaces || workspaces.length === 0) return;
+    if (workspace && workspaces.some((w) => w.id === workspace.id)) return;
+    setWorkspace(workspaces[0]);
   }, [workspaces, workspace, setWorkspace]);
 
   const { data: products, isFetched: productsFetched } = useQuery({
@@ -40,7 +47,9 @@ export function useBootstrap() {
   });
 
   useEffect(() => {
-    if (products && products.length > 0 && !product) setProduct(products[0]);
+    if (products && products.length > 0 && !(product && products.some((p) => p.id === product.id))) {
+      setProduct(products[0]);
+    }
     if (productsFetched) setReady(true);
   }, [products, productsFetched, product, setProduct]);
 

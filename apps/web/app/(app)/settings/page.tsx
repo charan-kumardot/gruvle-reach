@@ -100,6 +100,8 @@ export default function SettingsPage() {
                     <Button size="sm" variant="secondary" onClick={() => disconnect.mutate(entry.provider_name)}>Disconnect</Button>
                   ) : entry.provider_name === "github" ? (
                     <Button size="sm" onClick={() => setGithubDialogOpen(true)}>Connect</Button>
+                  ) : entry.provider_type === "social" ? (
+                    <p className="text-xs text-[var(--muted-foreground)]">OAuth connect isn&apos;t wired up yet for this provider — publishing will offer a manual copy-paste fallback instead.</p>
                   ) : (
                     <Button size="sm" onClick={() => connect.mutate(entry.provider_name)}>Connect</Button>
                   )}

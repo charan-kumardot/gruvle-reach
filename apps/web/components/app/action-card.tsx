@@ -35,6 +35,7 @@ export function ActionCard({ action, index }: { action: ActionItem; index: numbe
     onSuccess: () => {
       toast.success("Marked complete");
       queryClient.invalidateQueries({ queryKey: ["daily-brief"] });
+      queryClient.invalidateQueries({ queryKey: ["actions"] });
     },
   });
 
@@ -43,6 +44,7 @@ export function ActionCard({ action, index }: { action: ActionItem; index: numbe
     onSuccess: () => {
       toast.success("Approved");
       queryClient.invalidateQueries({ queryKey: ["daily-brief"] });
+      queryClient.invalidateQueries({ queryKey: ["actions"] });
     },
   });
 

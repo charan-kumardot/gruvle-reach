@@ -29,7 +29,7 @@ export const useAppStore = create<AppState>()(
         setToken(token);
         set({ token, userEmail });
       },
-      setOrganization: (organization) => set({ organization }),
+      setOrganization: (organization) => set({ organization, workspace: null, product: null }),
       setWorkspace: (workspace) => set({ workspace, product: null }),
       setProduct: (product) => set({ product }),
       logout: () => {
