@@ -202,7 +202,7 @@ def generate_daily_videos() -> int:
     from app.agents.content_pipeline import get_brand, get_truth
     from app.agents.video_pipeline import generate_video_for_idea
     from app.db.models.content import Content, ContentVariant
-    from app.db.models.enums import ContentStatus
+    from app.db.models.enums import ContentStatus, VideoStatus
     from app.db.models.video import Video
 
     db: Session = SessionLocal()
@@ -235,15 +235,15 @@ def generate_daily_videos() -> int:
 
                 brand = get_brand(db, product.workspace_id, product.id)
                 truth = get_truth(db, product.id)
+                # Synchronous end-to-end call is fine here — this task is
+                # already off the HTTP request path. render_video_into_row
+                # sets variant.video_id/media_refs itself on success.
                 video = generate_video_for_idea(
                     db, workspace_id=product.workspace_id, product_id=product.id, idea=content.idea,
                     brand=brand, truth=truth, cta_hint=(variant.cta if variant else ""),
                     content_variant_id=variant.id if variant else None,
                 )
-                if video is not None and video.storage_url and variant is not None:
-                    variant.video_id = video.id
-                    variant.media_refs = [video.storage_url]
-                if video is not None:
+                if video.status == VideoStatus.READY:
                     count += 1
                 db.commit()
             except Exception:  # noqa: BLE001

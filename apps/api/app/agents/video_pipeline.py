@@ -1,7 +1,15 @@
 """
 Shared idea->script->render->upload pipeline used by the /videos router and
-the daily-video Celery task — factored out so the task doesn't duplicate
-the router's rendering logic.
+the daily-video Celery task.
+
+Split into a fast, request-safe half (create_pending_video) and the actual
+work (render_video_into_row) so the HTTP router can return immediately and
+do the AI/FFmpeg/upload work in a background thread with its own DB
+session — Render's free-tier CPU is slow enough for this chain that doing
+it inline in the request routinely exceeded the platform's proxy timeout
+and 502'd, even though the work itself was correct (observed live against
+production). generate_video_for_idea composes both halves for callers that
+are already off the request path (the Celery task) and can block safely.
 """
 import datetime as dt
 import shutil
@@ -12,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.video_agent import VideoAgent, compose_scenes
+from app.db.models.content import ContentVariant
 from app.db.models.enums import VideoStatus
 from app.db.models.product import BrandBrain
 from app.db.models.video import Video, VideoBrandKit
@@ -32,6 +41,95 @@ def get_or_create_brand_kit(db: Session, *, workspace_id: uuid.UUID, product_id:
     return kit
 
 
+def create_pending_video(
+    db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID,
+    content_variant_id: uuid.UUID | None, aspect_ratio: str,
+) -> Video:
+    """Fast, cheap insert only — no AI call, no rendering. Commits so the
+    row is visible to a separate DB session (a background thread, or a
+    client polling GET /videos/{id}) immediately."""
+    video = Video(
+        workspace_id=workspace_id, product_id=product_id, content_variant_id=content_variant_id,
+        aspect_ratio=aspect_ratio, status=VideoStatus.RENDERING,
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    return video
+
+
+def render_video_into_row(
+    db: Session, *, video_id: uuid.UUID, idea: str, brand: BrandBrain | None, truth: ProductTruth | None, cta_hint: str = "",
+) -> None:
+    """Does the actual AI script call + FFmpeg render + upload, updating
+    the given (already-created) Video row in place at each stage so a
+    poller sees it transition RENDERING -> READY/FAILED. Safe to call from
+    a background thread with its own Session — never touches a session
+    that might be closed by the caller's request lifecycle."""
+    video = db.get(Video, video_id)
+    if video is None:
+        return
+
+    agent = VideoAgent(db, get_ai_provider())
+    script = agent.write_script(idea=idea, brand=brand, truth=truth, cta_hint=cta_hint)
+    if script is None:
+        video.status = VideoStatus.FAILED
+        video.render_log = "AI script generation failed or returned an unparseable response"
+        db.commit()
+        return
+
+    scenes = compose_scenes(script)
+    video.script = script
+    if not scenes:
+        video.status = VideoStatus.FAILED
+        video.render_log = "Generated script had no usable scenes"
+        db.commit()
+        return
+
+    kit = get_or_create_brand_kit(db, workspace_id=video.workspace_id, product_id=video.product_id)
+    video.brand_kit_snapshot = {
+        "primary_color": kit.primary_color, "secondary_color": kit.secondary_color,
+        "background_color": kit.background_color, "text_color": kit.text_color, "font_family": kit.font_family,
+    }
+    db.commit()
+
+    video_provider = get_video_provider()
+    render = video_provider.render(scenes, brand_kit=kit, aspect_ratio=video.aspect_ratio)
+
+    if not render.success:
+        video.status = VideoStatus.FAILED
+        video.render_log = (render.error + "\n" + render.render_log)[:4000]
+        db.commit()
+        return
+
+    storage = get_storage_provider()
+    data = Path(render.local_path).read_bytes()
+    upload = storage.upload(path=f"videos/{video.id}.mp4", data=data, content_type="video/mp4")
+    if render.workdir:
+        shutil.rmtree(render.workdir, ignore_errors=True)
+
+    if not upload.success:
+        video.status = VideoStatus.FAILED
+        video.render_log = (render.render_log + "\nUpload failed: " + upload.error)[:4000]
+        db.commit()
+        return
+
+    video.status = VideoStatus.READY
+    video.storage_url = upload.url
+    video.duration_seconds = render.duration_seconds
+    video.has_voiceover = render.has_voiceover
+    video.render_log = render.render_log[:4000]
+    video.rendered_at = dt.datetime.now(dt.timezone.utc)
+
+    if video.content_variant_id is not None:
+        variant = db.get(ContentVariant, video.content_variant_id)
+        if variant is not None:
+            variant.video_id = video.id
+            variant.media_refs = [upload.url]
+
+    db.commit()
+
+
 def generate_video_for_idea(
     db: Session,
     *,
@@ -43,59 +141,16 @@ def generate_video_for_idea(
     cta_hint: str = "",
     content_variant_id: uuid.UUID | None = None,
     aspect_ratio: str = "9:16",
-) -> Video | None:
-    """Returns a Video row (status READY or FAILED) or None if script
-    generation itself failed (AI unavailable) — a None return means "try
-    again later," a FAILED row means "rendering was attempted and failed,"
-    kept distinct so the caller/UI can tell them apart."""
-    agent = VideoAgent(db, get_ai_provider())
-    script = agent.write_script(idea=idea, brand=brand, truth=truth, cta_hint=cta_hint)
-    if script is None:
-        return None
-
-    scenes = compose_scenes(script)
-    if not scenes:
-        return None
-
-    kit = get_or_create_brand_kit(db, workspace_id=workspace_id, product_id=product_id)
-
-    video = Video(
-        workspace_id=workspace_id, product_id=product_id, content_variant_id=content_variant_id,
-        script=script, aspect_ratio=aspect_ratio, status=VideoStatus.RENDERING,
-        brand_kit_snapshot={
-            "primary_color": kit.primary_color, "secondary_color": kit.secondary_color,
-            "background_color": kit.background_color, "text_color": kit.text_color, "font_family": kit.font_family,
-        },
+) -> Video:
+    """Synchronous convenience wrapper (create + render in one call) for
+    callers already off the HTTP request path — currently the daily-video
+    Celery task, which can block safely. The HTTP router uses
+    create_pending_video + render_video_into_row directly so it can return
+    before the render finishes (see module docstring)."""
+    video = create_pending_video(
+        db, workspace_id=workspace_id, product_id=product_id,
+        content_variant_id=content_variant_id, aspect_ratio=aspect_ratio,
     )
-    db.add(video)
-    db.flush()
-
-    video_provider = get_video_provider()
-    render = video_provider.render(scenes, brand_kit=kit, aspect_ratio=aspect_ratio)
-
-    if not render.success:
-        video.status = VideoStatus.FAILED
-        video.render_log = (render.error + "\n" + render.render_log)[:4000]
-        db.flush()
-        return video
-
-    storage = get_storage_provider()
-    data = Path(render.local_path).read_bytes()
-    upload = storage.upload(path=f"videos/{video.id}.mp4", data=data, content_type="video/mp4")
-    if render.workdir:
-        shutil.rmtree(render.workdir, ignore_errors=True)
-
-    if not upload.success:
-        video.status = VideoStatus.FAILED
-        video.render_log = (render.render_log + "\nUpload failed: " + upload.error)[:4000]
-        db.flush()
-        return video
-
-    video.status = VideoStatus.READY
-    video.storage_url = upload.url
-    video.duration_seconds = render.duration_seconds
-    video.has_voiceover = render.has_voiceover
-    video.render_log = render.render_log[:4000]
-    video.rendered_at = dt.datetime.now(dt.timezone.utc)
-    db.flush()
+    render_video_into_row(db, video_id=video.id, idea=idea, brand=brand, truth=truth, cta_hint=cta_hint)
+    db.refresh(video)
     return video

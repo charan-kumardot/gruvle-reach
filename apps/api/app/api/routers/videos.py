@@ -1,3 +1,4 @@
+import threading
 import uuid
 from typing import Annotated
 
@@ -6,15 +7,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.content_pipeline import get_brand, get_truth
-from app.agents.video_pipeline import generate_video_for_idea
+from app.agents.video_pipeline import create_pending_video, render_video_into_row
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.content import Content, ContentVariant
 from app.db.models.enums import OrgRole
 from app.db.models.video import Video
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.schemas.video import VideoGenerateRequest, VideoResponse
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["videos"])
+
+
+def _render_in_background(*, video_id: uuid.UUID, idea: str, workspace_id: uuid.UUID, product_id: uuid.UUID, cta_hint: str) -> None:
+    """Runs off the request thread with its own DB session — Render's
+    free-tier CPU makes the AI+FFmpeg+upload chain slow enough that doing
+    it inline in the request routinely exceeded the platform's proxy
+    timeout (observed live against production), even though the work
+    itself completes correctly. The route returns a RENDERING row
+    immediately; the frontend polls GET /videos/{id} (or the Video Library
+    list, which already polls while any row is RENDERING)."""
+    db = SessionLocal()
+    try:
+        brand = get_brand(db, workspace_id, product_id)
+        truth = get_truth(db, product_id)
+        render_video_into_row(db, video_id=video_id, idea=idea, brand=brand, truth=truth, cta_hint=cta_hint)
+    finally:
+        db.close()
 
 
 @router.get("/videos", response_model=list[VideoResponse])
@@ -30,7 +48,7 @@ def get_video(video_id: uuid.UUID, ctx: Annotated[WorkspaceContext, Depends(requ
     return video
 
 
-@router.post("/videos/generate", response_model=VideoResponse)
+@router.post("/videos/generate", response_model=VideoResponse, status_code=202)
 def generate_video(
     payload: VideoGenerateRequest,
     ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
@@ -55,20 +73,19 @@ def generate_video(
     if not idea or not product_id:
         raise HTTPException(status_code=400, detail="Provide either content_variant_id or both idea and product_id")
 
-    brand = get_brand(db, ctx.workspace_id, product_id)
-    truth = get_truth(db, product_id)
-
-    video = generate_video_for_idea(
-        db, workspace_id=ctx.workspace_id, product_id=product_id, idea=idea, brand=brand, truth=truth,
-        cta_hint=cta_hint, content_variant_id=variant.id if variant else None, aspect_ratio=payload.aspect_ratio,
+    # Fast, synchronous part only — the row is created and committed so a
+    # poller can see it immediately; the AI script call, FFmpeg render, and
+    # storage upload all happen in the background thread below.
+    video = create_pending_video(
+        db, workspace_id=ctx.workspace_id, product_id=product_id,
+        content_variant_id=variant.id if variant else None, aspect_ratio=payload.aspect_ratio,
     )
-    if video is None:
-        raise HTTPException(status_code=503, detail="AI provider unavailable or returned an unparseable response.")
 
-    if variant is not None and video.storage_url:
-        variant.video_id = video.id
-        variant.media_refs = [video.storage_url]
+    thread = threading.Thread(
+        target=_render_in_background,
+        kwargs={"video_id": video.id, "idea": idea, "workspace_id": ctx.workspace_id, "product_id": product_id, "cta_hint": cta_hint},
+        daemon=True,
+    )
+    thread.start()
 
-    db.commit()
-    db.refresh(video)
     return video

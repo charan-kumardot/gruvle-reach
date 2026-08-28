@@ -37,10 +37,8 @@ export default function VideosPage() {
 
   const generate = useMutation({
     mutationFn: () => api.post<Video>(`/workspaces/${workspace!.id}/videos/generate`, { idea, product_id: product?.id, aspect_ratio: "9:16" }),
-    onSuccess: (video) => {
-      toast[video.status === "ready" ? "success" : "error"](
-        video.status === "ready" ? "Video rendered" : "Render failed — see the video card for details"
-      );
+    onSuccess: () => {
+      toast.success("Rendering started — this card will update automatically when it's ready");
       setOpen(false);
       setIdea("");
       queryClient.invalidateQueries({ queryKey: ["videos"] });
