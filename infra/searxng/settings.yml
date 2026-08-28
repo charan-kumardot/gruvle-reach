@@ -12,6 +12,13 @@ search:
     - html
     - json
 
+# Default per-engine timeout is tight (~3s) — too short from a free-tier
+# container, and mojeek timed out here on first try rather than being
+# blocked outright. Give every engine more room before giving up on it.
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 15.0
+
 server:
   secret_key: "0d5a8a1a6651b1300cfd8c33f0718ebcdc353a01266c661f151b7c0958376a91"
   # Render's free tier only allows public web services (no private-service
@@ -24,10 +31,13 @@ server:
 # use_default_settings only enables duckduckgo/google cse/startpage/brave
 # for general web search — all four rate-limit or CAPTCHA-block Render's
 # datacenter IPs (confirmed live, see CLAUDE.md), leaving zero results with
-# no fallback. Mojeek and Yahoo are both general-purpose web engines that
-# are historically far more tolerant of automated/datacenter traffic.
+# no fallback. These are additional general-purpose web engines, enabled
+# as fallbacks — not all of them will necessarily work either, but SearxNG
+# only needs one engine per query to actually respond.
 engines:
   - name: mojeek
     disabled: false
   - name: yahoo
+    disabled: false
+  - name: qwant
     disabled: false
