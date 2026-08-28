@@ -13,5 +13,8 @@ search:
     - json
 
 server:
-  secret_key: "change-me-searxng-secret"
+  secret_key: "0d5a8a1a6651b1300cfd8c33f0718ebcdc353a01266c661f151b7c0958376a91"
   limiter: false
+  # This instance is deployed as a Render private service (no public
+  # ingress) — reachable only by other services in the same account, so
+  # disabling the browser-facing rate limiter here is safe.
