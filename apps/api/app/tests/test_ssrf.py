@@ -1,7 +1,7 @@
 """The research fetcher must block internal/private/metadata targets (§43)."""
 import pytest
 
-from app.research.fetcher import SSRFBlockedError, _validate_url, safe_fetch_binary
+from app.research.fetcher import SSRFBlockedError, _validate_url
 
 
 @pytest.mark.parametrize(
@@ -33,11 +33,3 @@ def test_public_targets_pass_validation(url):
 def test_blocked_port_is_rejected():
     with pytest.raises(SSRFBlockedError):
         _validate_url("http://example.com:6379/")
-
-
-def test_safe_fetch_binary_applies_the_same_ssrf_validation():
-    """safe_fetch_binary (used to download product-screenshot/search-
-    sourced images) must go through the same _validate_url check as
-    safe_fetch, not a separate/weaker path."""
-    with pytest.raises(SSRFBlockedError):
-        safe_fetch_binary("http://169.254.169.254/latest/meta-data/")

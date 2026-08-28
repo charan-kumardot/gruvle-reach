@@ -15,7 +15,6 @@ export type ActionCategory = "customer" | "investor" | "marketing" | "content" |
 export type ContentStatus =
   | "idea" | "generating" | "draft" | "ready" | "approval_required" | "approved"
   | "scheduled" | "published" | "failed" | "rejected" | "archived";
-export type VideoStatus = "script_ready" | "rendering" | "ready" | "failed";
 export type OutreachMessageStatus = "drafted" | "approved" | "sent" | "rejected";
 export type MentionCategory = "positive" | "neutral" | "negative" | "question" | "purchase_intent" | "competitor_comparison" | "feedback";
 
@@ -344,7 +343,6 @@ export interface ContentVariant {
   scheduled_at: string | null;
   rejected_reason: string;
   quality_flags: { blocking_reasons?: string[]; warnings?: string[] };
-  video_id: string | null;
 }
 
 export interface ContentItem {
@@ -360,33 +358,6 @@ export interface ContentItem {
   variants: ContentVariant[];
 }
 
-export interface Video {
-  id: string;
-  workspace_id: string;
-  product_id: string;
-  content_variant_id: string | null;
-  script: { hook?: string; problem?: string; insight?: string; solution?: string; product?: string; cta?: string };
-  aspect_ratio: string;
-  duration_seconds: number;
-  has_voiceover: boolean;
-  storage_url: string;
-  status: VideoStatus;
-  render_log: string;
-  rendered_at: string | null;
-}
-
-export interface VideoBrandKit {
-  id: string;
-  workspace_id: string;
-  product_id: string | null;
-  primary_color: string;
-  secondary_color: string;
-  background_color: string;
-  text_color: string;
-  font_family: string;
-  logo_url: string;
-  product_screenshot_url: string;
-}
 
 export interface OutreachMessage {
   id: string;

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calendar, Clapperboard, PenSquare, Rocket, Sparkles } from "lucide-react";
+import { Calendar, PenSquare, Rocket, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
@@ -127,12 +127,6 @@ export default function ContentPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Regenerate failed"),
   });
 
-  const generateVideo = useMutation({
-    mutationFn: (variantId: string) => api.post(`/workspaces/${workspace!.id}/videos/generate`, { content_variant_id: variantId, aspect_ratio: "9:16" }),
-    onSuccess: () => { toast.success("Video rendering started — check the Video Library in a bit"); queryClient.invalidateQueries({ queryKey: ["videos"] }); },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Video generation failed"),
-  });
-
   if (!product) {
     return <EmptyState icon={PenSquare} title="Select a product" description="Choose a product to generate content." />;
   }
@@ -185,8 +179,6 @@ export default function ContentPage() {
                   onApprove={() => approve.mutate(v.id)}
                   onReject={() => reject.mutate(v.id)}
                   onRegenerate={() => regenerate.mutate(v.id)}
-                  onGenerateVideo={() => generateVideo.mutate(v.id)}
-                  videoPending={generateVideo.isPending && generateVideo.variables === v.id}
                   busy={approve.isPending || reject.isPending || regenerate.isPending}
                 />
               ))}
@@ -255,8 +247,6 @@ export default function ContentPage() {
                           onApprove={() => approve.mutate(v.id)}
                           onReject={() => reject.mutate(v.id)}
                           onRegenerate={() => regenerate.mutate(v.id)}
-                          onGenerateVideo={() => generateVideo.mutate(v.id)}
-                          videoPending={generateVideo.isPending && generateVideo.variables === v.id}
                           onPublishNow={() => publishNow.mutate(v.id)}
                           onOpenSchedule={() => { setSchedulingId(v.id); setScheduleValue(""); }}
                           scheduling={schedulingId === v.id}
@@ -294,8 +284,8 @@ export default function ContentPage() {
 }
 
 function VariantCard({
-  variant, idea, contentType, compact, busy, videoPending,
-  onApprove, onReject, onRegenerate, onGenerateVideo, onPublishNow,
+  variant, idea, contentType, compact, busy,
+  onApprove, onReject, onRegenerate, onPublishNow,
   onOpenSchedule, scheduling, scheduleValue, onScheduleValueChange, onConfirmSchedule,
 }: {
   variant: ContentVariant;
@@ -303,11 +293,9 @@ function VariantCard({
   contentType?: string;
   compact?: boolean;
   busy?: boolean;
-  videoPending?: boolean;
   onApprove: () => void;
   onReject: () => void;
   onRegenerate: () => void;
-  onGenerateVideo: () => void;
   onPublishNow?: () => void;
   onOpenSchedule?: () => void;
   scheduling?: boolean;
@@ -355,11 +343,6 @@ function VariantCard({
         )}
         {variant.status === "failed" && (
           <Button size="sm" variant="secondary" onClick={onRegenerate} disabled={busy}>Regenerate</Button>
-        )}
-        {(variant.status === "ready" || variant.status === "approved") && !variant.video_id && (
-          <Button size="sm" variant="ghost" onClick={onGenerateVideo} disabled={busy || videoPending}>
-            <Clapperboard className="mr-1 h-3.5 w-3.5" /> {videoPending ? "Rendering…" : "Generate video"}
-          </Button>
         )}
       </div>
 

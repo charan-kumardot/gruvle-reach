@@ -192,69 +192,6 @@ def plan_and_generate_daily_content() -> int:
 
 
 @celery_app.task
-def generate_daily_videos() -> int:
-    """§8-10 daily video generation — MAX_DAILY_VIDEOS=1/product, picks the
-    top idea from today's autonomous content plan. Runs after
-    plan_and_generate_daily_content in the beat schedule so READY variants
-    already exist to attach the video to."""
-    import datetime as dt
-
-    from app.agents.content_pipeline import get_brand, get_truth
-    from app.agents.video_pipeline import generate_video_for_idea
-    from app.db.models.content import Content, ContentVariant
-    from app.db.models.enums import ContentStatus, VideoStatus
-    from app.db.models.video import Video
-
-    db: Session = SessionLocal()
-    count = 0
-    try:
-        today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        products = db.execute(select(Product)).scalars().all()
-        for product in products:
-            try:
-                already_today = db.execute(
-                    select(Video.id).where(Video.product_id == product.id, Video.created_at >= today_start)
-                ).scalar_one_or_none()
-                if already_today is not None:
-                    continue
-
-                content = db.execute(
-                    select(Content)
-                    .where(
-                        Content.workspace_id == product.workspace_id, Content.product_id == product.id,
-                        Content.origin == "autonomous", Content.created_at >= today_start,
-                    )
-                    .order_by(Content.created_at.desc())
-                ).scalars().first()
-                if content is None:
-                    continue
-
-                variant = db.execute(
-                    select(ContentVariant).where(ContentVariant.content_id == content.id, ContentVariant.status == ContentStatus.READY)
-                ).scalars().first()
-
-                brand = get_brand(db, product.workspace_id, product.id)
-                truth = get_truth(db, product.id)
-                # Synchronous end-to-end call is fine here — this task is
-                # already off the HTTP request path. render_video_into_row
-                # sets variant.video_id/media_refs itself on success.
-                video = generate_video_for_idea(
-                    db, workspace_id=product.workspace_id, product_id=product.id, idea=content.idea,
-                    brand=brand, truth=truth, cta_hint=(variant.cta if variant else ""),
-                    content_variant_id=variant.id if variant else None,
-                )
-                if video.status == VideoStatus.READY:
-                    count += 1
-                db.commit()
-            except Exception:  # noqa: BLE001
-                db.rollback()
-                continue
-    finally:
-        db.close()
-    return count
-
-
-@celery_app.task
 def run_content_quality_scan() -> int:
     """§28-29 hourly safety net — re-gates any DRAFT/READY variant still
     sitting there after a couple of hours, covering the regenerate/manual-
@@ -375,21 +312,6 @@ def run_content_learning() -> int:
     finally:
         db.close()
     return total
-
-
-@celery_app.task
-def cleanup_old_videos_task() -> int:
-    """Deletes generated videos (DB row + Supabase Storage object) past
-    VIDEO_RETENTION_DAYS. The GET /videos routes also trigger this
-    opportunistically (throttled) since no worker currently runs this
-    beat schedule in production — see video_pipeline.py."""
-    from app.agents.video_pipeline import cleanup_old_videos
-
-    db: Session = SessionLocal()
-    try:
-        return cleanup_old_videos(db)
-    finally:
-        db.close()
 
 
 @celery_app.task

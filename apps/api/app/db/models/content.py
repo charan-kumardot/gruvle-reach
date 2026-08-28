@@ -39,10 +39,9 @@ class ContentVariant(Base, UUIDPKMixin, TimestampMixin):
     approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     performance: Mapped[dict] = mapped_column(JSONB, default=dict)
-    # platform-specific rendering hint, e.g. "post" | "thread" | "carousel" | "reel" | "short_video"
+    # platform-specific rendering hint, e.g. "post" | "thread" | "carousel" | "reel"
     platform_format: Mapped[str] = mapped_column(String(30), default="post")
     cta: Mapped[str] = mapped_column(String(200), default="")
     scheduled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_reason: Mapped[str] = mapped_column(Text, default="")
     quality_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
-    video_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("videos.id", ondelete="SET NULL"), nullable=True)

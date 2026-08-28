@@ -43,15 +43,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(day_of_week=3, hour=6, minute=0),
     },
     # §2-22 Autonomous Daily Content & Promotion Engine — bounded (MAX_DAILY_
-    # CONTENT_ITEMS, MAX_DAILY_VIDEOS), default human-approval-required
-    # before anything publishes (§19).
+    # CONTENT_ITEMS), default human-approval-required before anything
+    # publishes (§19).
     "daily-content-planning": {
         "task": "app.workers.tasks.plan_and_generate_daily_content",
         "schedule": crontab(hour=8, minute=0),
-    },
-    "daily-video-generation": {
-        "task": "app.workers.tasks.generate_daily_videos",
-        "schedule": crontab(hour=8, minute=30),  # after planning, so READY variants exist to attach to
     },
     "content-quality-sweep": {
         "task": "app.workers.tasks.run_content_quality_scan",
@@ -64,10 +60,6 @@ celery_app.conf.beat_schedule = {
     "weekly-content-learning": {
         "task": "app.workers.tasks.run_content_learning",
         "schedule": crontab(day_of_week=5, hour=6, minute=0),
-    },
-    "daily-video-cleanup": {
-        "task": "app.workers.tasks.cleanup_old_videos_task",
-        "schedule": crontab(hour=4, minute=0),
     },
 }
 

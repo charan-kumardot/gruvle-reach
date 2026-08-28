@@ -30,7 +30,6 @@ class ContentVariantResponse(BaseModel):
     scheduled_at: dt.datetime | None = None
     rejected_reason: str = ""
     quality_flags: dict = {}
-    video_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 

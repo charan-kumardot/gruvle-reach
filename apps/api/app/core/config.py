@@ -80,22 +80,6 @@ class Settings(BaseSettings):
 
     slack_webhook_url: str = ""
 
-    # Storage (generated video/image assets) — Supabase Storage reuses the
-    # same project as the shared Postgres database; local disk is a
-    # dev-only fallback when it isn't configured (see app/media/storage_*).
-    supabase_url: str = ""
-    supabase_service_role_key: str = ""
-    supabase_storage_bucket: str = "gruvle-media"
-
-    # Video generation — the template pipeline (FFmpeg Ken Burns + crossfade
-    # over a scene background) always works with zero credentials; when a
-    # Hugging Face token is present, scene backgrounds are AI-generated
-    # images instead of the procedural gradient, with a per-scene fallback
-    # to the procedural background if a generation call fails or the
-    # account's inference quota is exhausted (see app/providers/image/).
-    video_provider: Literal["template"] = "template"
-    huggingface_api_token: str = ""
-
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     @property

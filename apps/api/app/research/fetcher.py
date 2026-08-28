@@ -45,16 +45,6 @@ class FetchResult:
     truncated: bool
 
 
-@dataclass
-class BinaryFetchResult:
-    url: str
-    final_url: str
-    status_code: int
-    content_type: str
-    content: bytes
-    truncated: bool
-
-
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if ip in _METADATA_IPS:
         return True
@@ -129,48 +119,6 @@ def safe_fetch(url: str, *, max_bytes: int = MAX_RESPONSE_BYTES, timeout: float 
                     status_code=resp.status_code,
                     content_type=content_type,
                     text=text,
-                    truncated=truncated,
-                )
-
-    raise SSRFBlockedError("Too many redirects")
-
-
-def safe_fetch_binary(url: str, *, max_bytes: int = MAX_RESPONSE_BYTES, timeout: float = TIMEOUT_SECONDS) -> BinaryFetchResult:
-    """Same SSRF protections/redirect re-validation/streaming size cap as
-    safe_fetch, but returns raw bytes instead of decoding as text — for
-    downloading binary content (images) where UTF-8 decoding would corrupt
-    the data. Used to fetch web-search-sourced photos for video scene
-    backgrounds; never used for anything HTML/text."""
-    current_url = url
-    for _ in range(MAX_REDIRECTS + 1):
-        _validate_url(current_url)
-
-        with httpx.Client(follow_redirects=False, timeout=timeout) as client:
-            with client.stream("GET", current_url, headers={"User-Agent": "GruvleReachResearchBot/1.0"}) as resp:
-                if resp.is_redirect:
-                    next_url = resp.headers.get("location")
-                    if not next_url:
-                        raise SSRFBlockedError("Redirect with no Location header")
-                    current_url = httpx.URL(current_url).join(next_url).human_repr()
-                    continue
-
-                content_type = resp.headers.get("content-type", "")
-                chunks: list[bytes] = []
-                total = 0
-                truncated = False
-                for chunk in resp.iter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes:
-                        truncated = True
-                        break
-                    chunks.append(chunk)
-
-                return BinaryFetchResult(
-                    url=url,
-                    final_url=str(resp.url),
-                    status_code=resp.status_code,
-                    content_type=content_type,
-                    content=b"".join(chunks),
                     truncated=truncated,
                 )
 

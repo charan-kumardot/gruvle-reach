@@ -216,13 +216,3 @@ class LearningInsightStatus(str, enum.Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     IGNORED = "ignored"
-
-
-# ---- Daily Content & Promotion Engine -----------------------------------
-
-
-class VideoStatus(str, enum.Enum):
-    SCRIPT_READY = "script_ready"
-    RENDERING = "rendering"
-    READY = "ready"
-    FAILED = "failed"
