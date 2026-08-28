@@ -51,8 +51,9 @@ class Settings(BaseSettings):
     openai_compatible_model: str = ""
 
     # Search provider
-    search_provider: Literal["searxng", "rss", "manual"] = "searxng"
+    search_provider: Literal["searxng", "tavily", "rss", "manual"] = "searxng"
     searxng_base_url: str = "http://localhost:8888"
+    tavily_api_key: str = ""
 
     # Email provider
     email_provider: Literal["resend", "smtp", "disabled"] = "disabled"
