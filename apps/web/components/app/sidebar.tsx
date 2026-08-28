@@ -19,6 +19,7 @@ import {
   Settings,
   Shield,
   Radar,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/investors", label: "Investors", icon: Landmark },
   { href: "/opportunities", label: "Opportunities", icon: Sparkles },
+  { href: "/visibility", label: "Visibility", icon: Eye },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/content", label: "Content", icon: PenSquare },
   { href: "/outreach", label: "Outreach", icon: Send },

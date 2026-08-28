@@ -8,10 +8,139 @@ export type InvestorStage =
   | "discovered" | "researching" | "shortlisted" | "contacted" | "replied" | "meeting" | "follow_up" | "due_diligence" | "passed" | "invested";
 export type OpportunityType = "customer" | "investor" | "marketing" | "launch" | "community" | "content" | "partnership" | "media" | "event";
 export type ActionStatus = "today" | "upcoming" | "waiting" | "completed" | "snoozed";
-export type ActionCategory = "customer" | "investor" | "marketing" | "content" | "competitor" | "launch";
+export type ActionCategory = "customer" | "investor" | "marketing" | "content" | "competitor" | "launch" | "visibility";
 export type ContentStatus = "idea" | "draft" | "approved" | "published";
 export type OutreachMessageStatus = "drafted" | "approved" | "sent" | "rejected";
 export type MentionCategory = "positive" | "neutral" | "negative" | "question" | "purchase_intent" | "competitor_comparison" | "feedback";
+
+// ---- Visibility module ----
+export type ConfidenceLabelType = "verified" | "estimated" | "unknown";
+export type RiskLevelType = "low" | "medium" | "high" | "critical";
+export type OptimizationModeType = "analyze_only" | "propose" | "prepare" | "autonomous";
+export type WebsiteChangeStatusType = "drafted" | "validated" | "blocked" | "approved" | "branch_created" | "pr_created" | "merged" | "rejected";
+export type OpportunityCoverageType = "low" | "medium" | "high";
+export type WebsiteOpportunityStatusType = "open" | "proposed" | "rejected" | "completed";
+export type VisibilityCoverageStatusType = "mentioned" | "not_detected";
+
+export interface ScanField<T = unknown> {
+  value: T;
+  confidence: ConfidenceLabelType;
+}
+
+export interface Website {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  name: string;
+  url: string;
+  repository_owner: string;
+  repository_name: string;
+  default_branch: string;
+  deployment_platform: string;
+  framework: string;
+  framework_confidence: ConfidenceLabelType;
+}
+
+export interface WebsiteScan {
+  id: string;
+  website_id: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  raw_result: Record<string, ScanField>;
+  summary_scores: Record<string, number>;
+  error: string;
+}
+
+export interface SEOIssue {
+  id: string;
+  website_scan_id: string;
+  issue_type: string;
+  impact: string;
+  evidence: string;
+  recommendation: string;
+  confidence: number;
+  status: string;
+}
+
+export interface VisibilityQuestion {
+  id: string;
+  website_id: string;
+  question: string;
+  category: string;
+  coverage_status: VisibilityCoverageStatusType;
+  evidence_snippet: string;
+  confidence: number;
+}
+
+export interface ProductTruth {
+  id: string;
+  product_id: string;
+  definition: string;
+  target_customer: string;
+  problem: string;
+  solution: string;
+  core_features: string[];
+  positioning: string;
+  approved_claims: string[];
+  forbidden_claims: string[];
+  brand_voice: string;
+  competitors: string[];
+  pricing: string;
+  differentiators: string[];
+}
+
+export interface WebsiteGuardrails {
+  id: string;
+  website_id: string;
+  protect_product_meaning: boolean;
+  protect_brand_voice: boolean;
+  protect_visual_design: boolean;
+  require_approval_content: boolean;
+  require_approval_code: boolean;
+  require_approval_production: boolean;
+  block_unsupported_claims: boolean;
+  run_build_checks: boolean;
+  run_visual_checks: boolean;
+}
+
+export interface WebsiteOpportunity {
+  id: string;
+  website_id: string;
+  opportunity_id: string | null;
+  title: string;
+  description: string;
+  target_path: string;
+  current_coverage: OpportunityCoverageType;
+  product_fit_score: number;
+  impact: string;
+  confidence: number;
+  status: WebsiteOpportunityStatusType;
+}
+
+export interface WebsiteChangeFile {
+  path: string;
+  before: string;
+  after: string;
+  sha?: string;
+}
+
+export interface WebsiteChange {
+  id: string;
+  website_id: string;
+  website_opportunity_id: string | null;
+  risk_level: RiskLevelType;
+  mode: OptimizationModeType;
+  status: WebsiteChangeStatusType;
+  branch_name: string;
+  base_branch: string;
+  commit_sha: string;
+  pr_number: number | null;
+  pr_url: string;
+  files_changed: WebsiteChangeFile[];
+  semantic_diff: Record<string, unknown>;
+  reason: string;
+}
 
 export interface Organization {
   id: string;

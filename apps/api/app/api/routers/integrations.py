@@ -17,6 +17,7 @@ from app.db.models.enums import IntegrationProviderType, IntegrationStatus, OrgR
 from app.db.models.integration import Integration, IntegrationCredential
 from app.db.session import get_db
 from app.providers.email.factory import get_email_provider
+from app.providers.git.github_provider import GitHubProvider
 from app.providers.search.factory import get_search_provider
 from app.providers.social.factory import get_social_providers
 from app.schemas.integration import IntegrationCatalogEntry, IntegrationResponse
@@ -63,6 +64,17 @@ def get_catalog(ctx: Annotated[WorkspaceContext, Depends(require_workspace_membe
             )
         )
 
+    github_row = connected_rows.get("github")
+    entries.append(
+        IntegrationCatalogEntry(
+            provider_name="github", provider_type=IntegrationProviderType.GIT,
+            configured=True,  # PAT-based — always available to connect, no deployment-level env var needed
+            connected=bool(github_row and github_row.status == IntegrationStatus.CONNECTED),
+            capabilities={"read_repository": True, "create_branch": True, "create_pull_request": True, "merge": False, "deploy": False},
+            notes="Connect with a fine-grained Personal Access Token (repo contents + pull requests, read+write). Reach never merges a PR or deploys.",
+        )
+    )
+
     return entries
 
 
@@ -104,7 +116,7 @@ def connect_integration(
     db: Annotated[Session, Depends(get_db)],
 ):
     settings = get_settings()
-    all_known = {p.name for p in get_social_providers(settings).values()} | {get_email_provider().name, get_search_provider().name}
+    all_known = {p.name for p in get_social_providers(settings).values()} | {get_email_provider().name, get_search_provider().name, "github"}
     if provider_name not in all_known:
         raise HTTPException(status_code=404, detail="Unknown provider")
 
@@ -113,6 +125,16 @@ def connect_integration(
         provider_type = IntegrationProviderType.EMAIL
     elif provider_name in (get_search_provider().name,):
         provider_type = IntegrationProviderType.SEARCH
+    elif provider_name == "github":
+        provider_type = IntegrationProviderType.GIT
+        pat = payload.credential_payload.get("pat", "")
+        candidate = GitHubProvider(token=pat)
+        if not candidate.configured():
+            raise HTTPException(status_code=400, detail="A Personal Access Token is required")
+        try:
+            candidate.list_repositories()  # validates the token actually works before we store it
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Could not authenticate with GitHub: {exc}") from exc
 
     row = db.execute(
         select(Integration).where(Integration.workspace_id == ctx.workspace_id, Integration.provider_name == provider_name)
@@ -172,3 +194,17 @@ def disconnect_integration(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.get("/github/repositories")
+def list_github_repositories(ctx: Annotated[WorkspaceContext, Depends(require_workspace_member)], db: Annotated[Session, Depends(get_db)]):
+    from app.providers.git.factory import get_git_provider_for_workspace
+
+    git_provider = get_git_provider_for_workspace(db, ctx.workspace_id)
+    if not git_provider.configured():
+        raise HTTPException(status_code=400, detail="GitHub is not connected for this workspace")
+    repos = git_provider.list_repositories()
+    return [
+        {"owner": r.owner, "name": r.name, "default_branch": r.default_branch, "private": r.private, "html_url": r.html_url}
+        for r in repos
+    ]

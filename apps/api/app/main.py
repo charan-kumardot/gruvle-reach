@@ -18,6 +18,7 @@ from app.api.routers import (
     products,
     research,
     settings as settings_router,
+    visibility,
 )
 from app.core.config import get_settings
 
@@ -54,6 +55,7 @@ for router in (
     analytics.router,
     integrations.router,
     settings_router.router,
+    visibility.router,
 ):
     app.include_router(router, prefix="/api/v1")
 

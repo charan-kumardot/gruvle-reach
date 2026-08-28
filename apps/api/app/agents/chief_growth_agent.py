@@ -19,6 +19,7 @@ from app.db.models.competitor import CompetitorChange
 from app.db.models.enums import ActionCategory, ActionStatus, CompanyFitCategory
 from app.db.models.investor import Investor, InvestorMatch
 from app.db.models.opportunity import Opportunity
+from app.db.models.visibility import WebsiteOpportunity
 
 MAX_DAILY_ACTIONS = 7
 
@@ -110,15 +111,28 @@ def generate_daily_actions(db: Session, *, workspace_id: uuid.UUID, product_id: 
         .limit(3)
     ).scalars().all()
 
+    website_opportunity_ids = {
+        row[0]
+        for row in db.execute(
+            select(WebsiteOpportunity.opportunity_id).where(WebsiteOpportunity.opportunity_id.isnot(None))
+        ).all()
+    }
+
     for opp in top_opportunities:
         if _has_open_action(db, workspace_id=workspace_id, related_entity_type="opportunity", related_entity_id=opp.id):
             continue
+        if opp.id in website_opportunity_ids:
+            category = ActionCategory.VISIBILITY
+        elif opp.type.value in ("marketing", "launch", "community", "event", "media"):
+            category = ActionCategory.MARKETING
+        else:
+            category = ActionCategory.CONTENT
         action = Action(
             workspace_id=workspace_id,
             product_id=product_id,
             title=opp.title,
             description=opp.description,
-            category=ActionCategory.MARKETING if opp.type.value in ("marketing", "launch", "community", "event", "media") else ActionCategory.CONTENT,
+            category=category,
             why=opp.description,
             impact="medium",
             effort="low",

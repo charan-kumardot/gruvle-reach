@@ -17,6 +17,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   content: "Content",
   competitor: "Competitor",
   launch: "Launch",
+  visibility: "Visibility",
 };
 
 const IMPACT_VARIANT: Record<string, "success" | "warning" | "muted"> = {

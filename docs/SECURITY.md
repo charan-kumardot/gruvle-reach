@@ -34,6 +34,20 @@ approval step:
 - Agents (`app/agents/*`) have no reference to `EmailProvider` or
   `SocialProvider` — they can only write recommendations to the database.
 
+The Visibility module's git-write path mirrors this exactly, with one
+addition — see [docs/VISIBILITY.md](VISIBILITY.md) for the full model:
+
+- `WebsiteChange.status` must be `APPROVED` before `prepare_website_change`
+  (`app/actions/git_executor.py`) will touch `GitProvider` — verified in
+  `app/tests/test_visibility_risk.py`.
+- **CRITICAL and HIGH risk changes can never be approved for auto-prepare,
+  regardless of role** (`app/agents/risk_classifier.py::is_auto_prepareable`)
+  — a stricter rule than the email gate, because this path writes to a
+  founder's own source code repository.
+- `GitProvider` (`app/providers/git/base.py`) has no `merge()`, `delete()`,
+  or `force_push()` method — those actions don't exist in the interface at
+  all, not just disallowed by policy.
+
 ## SSRF protection
 
 `app/research/fetcher.py::safe_fetch` is the only way anything in this

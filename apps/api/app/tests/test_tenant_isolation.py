@@ -57,3 +57,40 @@ def test_unauthenticated_request_is_rejected(client):
     workspace_id = get_default_workspace(client, owner["headers"])
     resp = client.get(f"/api/v1/workspaces/{workspace_id}/products")
     assert resp.status_code == 401
+
+
+def test_outsider_cannot_list_websites_in_foreign_workspace(client):
+    owner = register_user(client)
+    workspace_id = get_default_workspace(client, owner["headers"])
+    product = client.post(
+        f"/api/v1/workspaces/{workspace_id}/products", headers=owner["headers"], json={"name": "P"}
+    ).json()
+    client.post(
+        f"/api/v1/workspaces/{workspace_id}/websites",
+        headers=owner["headers"],
+        json={"name": "Secret Site", "url": "https://example.com", "product_id": product["id"]},
+    )
+
+    outsider = register_user(client)
+    resp = client.get(f"/api/v1/workspaces/{workspace_id}/websites", headers=outsider["headers"])
+    assert resp.status_code == 404
+
+
+def test_outsider_cannot_read_specific_website_by_id(client):
+    owner = register_user(client)
+    workspace_id = get_default_workspace(client, owner["headers"])
+    product = client.post(
+        f"/api/v1/workspaces/{workspace_id}/products", headers=owner["headers"], json={"name": "P"}
+    ).json()
+    website = client.post(
+        f"/api/v1/workspaces/{workspace_id}/websites",
+        headers=owner["headers"],
+        json={"name": "Secret Site", "url": "https://example.com", "product_id": product["id"]},
+    ).json()
+
+    outsider = register_user(client)
+    outsider_workspace_id = get_default_workspace(client, outsider["headers"])
+    resp = client.get(
+        f"/api/v1/workspaces/{outsider_workspace_id}/websites/{website['id']}", headers=outsider["headers"]
+    )
+    assert resp.status_code == 404

@@ -65,6 +65,7 @@ Full setup detail, including Ollama model selection, is in
 - [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) — Ollama/Groq/OpenAI-compatible setup
 - [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — adding a new provider adapter
 - [docs/EXTENDING.md](docs/EXTENDING.md) — adding a new agent or research source
+- [docs/VISIBILITY.md](docs/VISIBILITY.md) — the AI website optimization module: connect a site's GitHub repo, get scanned SEO/GEO opportunities turned into reviewable pull requests
 
 ## Stack
 

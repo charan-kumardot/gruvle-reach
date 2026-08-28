@@ -81,6 +81,7 @@ class ActionCategory(str, enum.Enum):
     CONTENT = "content"
     COMPETITOR = "competitor"
     LAUNCH = "launch"
+    VISIBILITY = "visibility"
 
 
 class ContentStatus(str, enum.Enum):
@@ -124,6 +125,8 @@ class IntegrationProviderType(str, enum.Enum):
     ANALYTICS = "analytics"
     CRM = "crm"
     ENRICHMENT = "enrichment"
+    GIT = "git"
+    DEPLOYMENT = "deployment"
 
 
 class IntegrationStatus(str, enum.Enum):
@@ -131,3 +134,59 @@ class IntegrationStatus(str, enum.Enum):
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"
     ERROR = "error"
+
+
+# ---- Visibility module -------------------------------------------------
+
+
+class ConfidenceLabel(str, enum.Enum):
+    """How sure we are about a scanned/measured fact (§6, §45 of the
+    original spec's anti-hallucination principle, extended to website
+    analysis)."""
+
+    VERIFIED = "verified"
+    ESTIMATED = "estimated"
+    UNKNOWN = "unknown"
+
+
+class RiskLevel(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class OptimizationMode(str, enum.Enum):
+    ANALYZE_ONLY = "analyze_only"
+    PROPOSE = "propose"
+    PREPARE = "prepare"
+    AUTONOMOUS = "autonomous"  # modeled but rejected by the API — disabled by default, not implemented
+
+
+class WebsiteChangeStatus(str, enum.Enum):
+    DRAFTED = "drafted"
+    VALIDATED = "validated"
+    BLOCKED = "blocked"
+    APPROVED = "approved"
+    BRANCH_CREATED = "branch_created"
+    PR_CREATED = "pr_created"
+    MERGED = "merged"
+    REJECTED = "rejected"
+
+
+class OpportunityCoverage(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class WebsiteOpportunityStatus(str, enum.Enum):
+    OPEN = "open"
+    PROPOSED = "proposed"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+
+
+class VisibilityCoverageStatus(str, enum.Enum):
+    MENTIONED = "mentioned"
+    NOT_DETECTED = "not_detected"

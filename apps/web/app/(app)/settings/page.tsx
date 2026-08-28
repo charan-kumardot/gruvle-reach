@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings as SettingsIcon, Plug, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -10,10 +11,15 @@ import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function SettingsPage() {
   const workspace = useAppStore((s) => s.workspace);
   const queryClient = useQueryClient();
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false);
+  const [pat, setPat] = useState("");
 
   const { data: catalog } = useQuery({
     queryKey: ["integration-catalog", workspace?.id],
@@ -29,6 +35,17 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["integration-catalog"] });
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Connect failed (requires admin role)"),
+  });
+
+  const connectGithub = useMutation({
+    mutationFn: () => api.post(`/workspaces/${workspace!.id}/integrations/github/connect`, { credential_payload: { pat } }),
+    onSuccess: () => {
+      toast.success("GitHub connected");
+      setGithubDialogOpen(false);
+      setPat("");
+      queryClient.invalidateQueries({ queryKey: ["integration-catalog"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not authenticate with GitHub"),
   });
 
   const disconnect = useMutation({
@@ -81,6 +98,8 @@ export default function SettingsPage() {
                 <div className="mt-3">
                   {entry.connected ? (
                     <Button size="sm" variant="secondary" onClick={() => disconnect.mutate(entry.provider_name)}>Disconnect</Button>
+                  ) : entry.provider_name === "github" ? (
+                    <Button size="sm" onClick={() => setGithubDialogOpen(true)}>Connect</Button>
                   ) : (
                     <Button size="sm" onClick={() => connect.mutate(entry.provider_name)}>Connect</Button>
                   )}
@@ -90,6 +109,26 @@ export default function SettingsPage() {
           </Card>
         ))}
       </div>
+
+      <Dialog open={githubDialogOpen} onOpenChange={setGithubDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect GitHub</DialogTitle>
+            <DialogDescription>
+              Paste a fine-grained Personal Access Token scoped to Contents (read/write) and Pull requests
+              (read/write) for the repositories you want Reach to work with. Least privilege — Reach never asks for
+              merge, admin, or billing access.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); connectGithub.mutate(); }}>
+            <div className="flex flex-col gap-1.5">
+              <Label>Personal Access Token</Label>
+              <Input required type="password" value={pat} onChange={(e) => setPat(e.target.value)} placeholder="github_pat_..." />
+            </div>
+            <Button type="submit" disabled={connectGithub.isPending}>{connectGithub.isPending ? "Verifying…" : "Connect"}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

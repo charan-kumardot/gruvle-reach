@@ -29,3 +29,23 @@ def test_connect_integration_audit_log_never_contains_credential_payload(client)
     assert logs_resp.status_code == 200
     body = logs_resp.text
     assert "THIS_MUST_NEVER_BE_LOGGED" not in body
+
+
+def test_github_pat_never_leaks_into_response_or_audit_log(client):
+    """A bogus PAT is rejected (real call to api.github.com) — and the token
+    string must not leak into the error response or the audit log either way."""
+    from app.tests.conftest import get_default_workspace, register_user
+
+    owner = register_user(client)
+    workspace_id = get_default_workspace(client, owner["headers"])
+    fake_pat = "ghp_THIS_TOKEN_MUST_NEVER_BE_LOGGED_1234567890"
+
+    resp = client.post(
+        f"/api/v1/workspaces/{workspace_id}/integrations/github/connect",
+        headers=owner["headers"],
+        json={"credential_payload": {"pat": fake_pat}},
+    )
+    assert fake_pat not in resp.text
+
+    logs_resp = client.get(f"/api/v1/workspaces/{workspace_id}/audit-logs", headers=owner["headers"])
+    assert fake_pat not in logs_resp.text
