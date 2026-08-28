@@ -20,3 +20,14 @@ server:
   # finds the URL — our own backend's query volume is nowhere near what
   # would trip it.
   limiter: true
+
+# use_default_settings only enables duckduckgo/google cse/startpage/brave
+# for general web search — all four rate-limit or CAPTCHA-block Render's
+# datacenter IPs (confirmed live, see CLAUDE.md), leaving zero results with
+# no fallback. Mojeek and Yahoo are both general-purpose web engines that
+# are historically far more tolerant of automated/datacenter traffic.
+engines:
+  - name: mojeek
+    disabled: false
+  - name: yahoo
+    disabled: false
