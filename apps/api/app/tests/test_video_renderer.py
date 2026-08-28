@@ -24,7 +24,8 @@ def test_render_produces_a_playable_mp4_from_two_scenes():
         assert result.success is True, result.error or result.render_log
         assert Path(result.local_path).exists()
         assert Path(result.local_path).stat().st_size > 1000  # a real encoded video, not an empty/corrupt file
-        assert result.duration_seconds == pytest.approx(4.0)
+        # 4.0s of scene animation + one ~0.28s crossfade transition between them.
+        assert result.duration_seconds == pytest.approx(4.28, abs=0.05)
     finally:
         if result.workdir:
             shutil.rmtree(result.workdir, ignore_errors=True)

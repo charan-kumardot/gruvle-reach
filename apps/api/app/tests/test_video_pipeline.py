@@ -9,7 +9,13 @@ import pytest
 
 import datetime as dt
 
-from app.agents.video_pipeline import STALE_RENDER_MINUTES, create_pending_video, mark_stale_renders_failed, render_video_into_row
+from app.agents.video_pipeline import (
+    STALE_RENDER_MINUTES,
+    cleanup_old_videos,
+    create_pending_video,
+    mark_stale_renders_failed,
+    render_video_into_row,
+)
 from app.db.models.enums import VideoStatus
 from app.db.models.product import Product
 from app.db.models.tenancy import Organization, Workspace
@@ -73,3 +79,52 @@ def test_fresh_render_is_not_marked_failed(db, workspace_and_product):
     assert count == 0
     db.refresh(video)
     assert video.status == VideoStatus.RENDERING
+
+
+class _FakeStorage:
+    def __init__(self):
+        self.deleted_paths: list[str] = []
+
+    def configured(self):
+        return True
+
+    def upload(self, *, path, data, content_type):
+        raise AssertionError("cleanup should only delete, never upload")
+
+    def delete(self, *, path):
+        self.deleted_paths.append(path)
+
+
+def test_cleanup_deletes_old_videos_from_db_and_storage(db, workspace_and_product, monkeypatch):
+    workspace, product = workspace_and_product
+    old_video = create_pending_video(db, workspace_id=workspace.id, product_id=product.id, content_variant_id=None, aspect_ratio="9:16")
+    old_video.storage_url = "https://example.supabase.co/storage/v1/object/public/gruvle-media/videos/x.mp4"
+    old_video.created_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=31)
+    recent_video = create_pending_video(db, workspace_id=workspace.id, product_id=product.id, content_variant_id=None, aspect_ratio="9:16")
+    db.commit()
+
+    fake_storage = _FakeStorage()
+    monkeypatch.setattr("app.agents.video_pipeline.get_storage_provider", lambda: fake_storage)
+
+    count = cleanup_old_videos(db, older_than_days=30)
+
+    assert count == 1
+    assert fake_storage.deleted_paths == [f"videos/{old_video.id}.mp4"]
+    assert db.get(type(recent_video), recent_video.id) is not None  # untouched
+    from app.db.models.video import Video
+    assert db.get(Video, old_video.id) is None
+
+
+def test_cleanup_skips_videos_with_no_storage_url(db, workspace_and_product, monkeypatch):
+    workspace, product = workspace_and_product
+    video = create_pending_video(db, workspace_id=workspace.id, product_id=product.id, content_variant_id=None, aspect_ratio="9:16")
+    video.created_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=31)
+    db.commit()
+
+    fake_storage = _FakeStorage()
+    monkeypatch.setattr("app.agents.video_pipeline.get_storage_provider", lambda: fake_storage)
+
+    count = cleanup_old_videos(db, older_than_days=30)
+
+    assert count == 1
+    assert fake_storage.deleted_paths == []  # never had a storage object to delete

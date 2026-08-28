@@ -1,9 +1,11 @@
 """
 FFmpeg orchestration via subprocess — deliberately no ffmpeg-python/moviepy
 dependency, keeping this light per the codebase's existing dependency
-posture. v1 renders a concat-demuxer slideshow (per-scene PNG + duration)
-with hard cuts; an xfade crossfade chain is a documented stretch goal, not
-implemented here to keep the render pipeline simple and reliable (§9, §40).
+posture. Composes each scene's Ken Burns zoom animation (scene_renderer.py)
+plus short crossfade transitions between scenes into one concat-demuxer
+timeline — still a single simple `ffmpeg -f concat` call, no filter_complex
+graph, so render cost/reliability stays the same shape as the original
+one-static-frame-per-scene version despite the much richer motion.
 """
 import logging
 import shutil
@@ -15,7 +17,7 @@ from pathlib import Path
 
 from app.agents.video_agent import Scene
 from app.db.models.video import VideoBrandKit
-from app.media.scene_renderer import render_scene_frame
+from app.media.scene_renderer import render_scene_animation, render_transition_frames
 from app.media.tts import synthesize_voiceover
 
 logger = logging.getLogger(__name__)
@@ -47,24 +49,33 @@ def render_video(scenes: list[Scene], *, brand_kit: VideoBrandKit | None, aspect
     workdir = Path(tempfile.mkdtemp(prefix="gruvle_video_"))
     log_lines: list[str] = []
     try:
+        # Build the full frame timeline: each scene's zoom animation, with
+        # a short crossfade spliced in between consecutive scenes.
+        timeline: list[tuple] = []  # (PIL.Image, duration_seconds)
+        scene_animations = [render_scene_animation(scene, brand_kit, aspect_ratio) for scene in scenes]
+        for i, animation in enumerate(scene_animations):
+            timeline.extend(animation)
+            if i < len(scene_animations) - 1:
+                transition = render_transition_frames(animation[-1][0], scene_animations[i + 1][0][0])
+                timeline.extend(transition)
+
         frame_paths: list[Path] = []
-        for i, scene in enumerate(scenes):
-            png_bytes = render_scene_frame(scene, brand_kit, aspect_ratio)
-            frame_path = workdir / f"scene_{i:02d}.png"
-            frame_path.write_bytes(png_bytes)
+        for idx, (image, _duration) in enumerate(timeline):
+            frame_path = workdir / f"frame_{idx:04d}.png"
+            image.save(frame_path, format="PNG")
             frame_paths.append(frame_path)
 
         list_path = workdir / "concat_list.txt"
         with list_path.open("w", encoding="utf-8") as f:
-            for frame_path, scene in zip(frame_paths, scenes):
+            for frame_path, (_image, duration) in zip(frame_paths, timeline):
                 posix_path = frame_path.as_posix()
                 f.write(f"file '{posix_path}'\n")
-                f.write(f"duration {scene.duration_seconds}\n")
+                f.write(f"duration {duration}\n")
             # concat demuxer quirk: the last entry's duration is ignored
             # unless the file is listed once more without a duration.
             f.write(f"file '{frame_paths[-1].as_posix()}'\n")
 
-        total_duration = sum(scene.duration_seconds for scene in scenes)
+        total_duration = sum(duration for _image, duration in timeline)
 
         narration = " ... ".join(scene.text for scene in scenes)
         voiceover_path = workdir / "voiceover.wav"
@@ -81,6 +92,7 @@ def render_video(scenes: list[Scene], *, brand_kit: VideoBrandKit | None, aspect
 
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_SECONDS)
         log_lines.append(" ".join(cmd))
+        log_lines.append(f"{len(frame_paths)} frames")
         log_lines.append(proc.stderr[-4000:])
 
         if proc.returncode != 0 or not output_path.exists():

@@ -69,6 +69,48 @@ def mark_stale_renders_failed(db: Session, *, workspace_id: uuid.UUID | None = N
     return len(stale)
 
 
+VIDEO_RETENTION_DAYS = 30
+_OPPORTUNISTIC_CLEANUP_INTERVAL = dt.timedelta(hours=6)
+_last_opportunistic_cleanup: dt.datetime | None = None
+
+
+def cleanup_old_videos(db: Session, *, older_than_days: int = VIDEO_RETENTION_DAYS) -> int:
+    """Deletes both the DB row and its Supabase Storage object for any
+    Video older than the retention window — generated videos are short-
+    form review assets, not a long-term archive, and Storage isn't free
+    past its tier's cap. Runs across all workspaces (a plain scheduled
+    sweep, same shape as the other cleanup/discovery Celery tasks)."""
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=older_than_days)
+    old_videos = db.execute(select(Video).where(Video.created_at < cutoff)).scalars().all()
+    if not old_videos:
+        return 0
+
+    storage = get_storage_provider()
+    for video in old_videos:
+        if video.storage_url:
+            storage.delete(path=f"videos/{video.id}.mp4")
+        db.delete(video)
+    db.commit()
+    return len(old_videos)
+
+
+def maybe_cleanup_old_videos(db: Session) -> int:
+    """Opportunistic trigger for the same cleanup, called from the GET
+    /videos routes — a plain scheduled Celery task also exists
+    (app.workers.tasks.cleanup_old_videos_task) for when a worker service
+    is available, but nothing schedules it today (see video_pipeline.py's
+    module docstring / the commit that added mark_stale_renders_failed),
+    so this keeps retention actually happening in the meantime. Throttled
+    in-process so a busy Video Library doesn't run a delete sweep on every
+    page load."""
+    global _last_opportunistic_cleanup
+    now = dt.datetime.now(dt.timezone.utc)
+    if _last_opportunistic_cleanup is not None and now - _last_opportunistic_cleanup < _OPPORTUNISTIC_CLEANUP_INTERVAL:
+        return 0
+    _last_opportunistic_cleanup = now
+    return cleanup_old_videos(db)
+
+
 def create_pending_video(
     db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID,
     content_variant_id: uuid.UUID | None, aspect_ratio: str,

@@ -65,6 +65,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.run_content_learning",
         "schedule": crontab(day_of_week=5, hour=6, minute=0),
     },
+    "daily-video-cleanup": {
+        "task": "app.workers.tasks.cleanup_old_videos_task",
+        "schedule": crontab(hour=4, minute=0),
+    },
 }
 
 celery_app.autodiscover_tasks(["app.workers"])

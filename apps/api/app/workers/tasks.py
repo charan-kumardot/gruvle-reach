@@ -378,6 +378,21 @@ def run_content_learning() -> int:
 
 
 @celery_app.task
+def cleanup_old_videos_task() -> int:
+    """Deletes generated videos (DB row + Supabase Storage object) past
+    VIDEO_RETENTION_DAYS. The GET /videos routes also trigger this
+    opportunistically (throttled) since no worker currently runs this
+    beat schedule in production — see video_pipeline.py."""
+    from app.agents.video_pipeline import cleanup_old_videos
+
+    db: Session = SessionLocal()
+    try:
+        return cleanup_old_videos(db)
+    finally:
+        db.close()
+
+
+@celery_app.task
 def discover_marketing_opportunities_for_all_products() -> int:
     """§22 weekly autonomous marketing-opportunity discovery."""
     from app.agents.marketing_discovery_agent import MarketingDiscoveryAgent
