@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Rocket, Sparkles, Wand2 } from "lucide-react";
+import { Package, Plus, Rocket, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
@@ -22,6 +22,7 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: "", website: "", description: "", category: "" });
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
 
   const { data: products } = useQuery({
     queryKey: ["products", workspace?.id],
@@ -41,6 +42,17 @@ export default function ProductsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to create product"),
   });
 
+  const deleteProduct = useMutation({
+    mutationFn: (id: string) => api.delete(`/workspaces/${workspace!.id}/products/${id}`),
+    onSuccess: (_data, id) => {
+      toast.success("Product deleted");
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["products", workspace?.id] });
+      if (selected?.id === id) setProduct(null);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Delete failed — requires the admin role"),
+  });
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -56,7 +68,13 @@ export default function ProductsPage() {
       {products && products.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} selected={selected?.id === p.id} onSelect={() => setProduct(p)} />
+            <ProductCard
+              key={p.id}
+              product={p}
+              selected={selected?.id === p.id}
+              onSelect={() => setProduct(p)}
+              onDelete={() => setDeleteTarget(p)}
+            />
           ))}
         </div>
       ) : (
@@ -102,11 +120,39 @@ export default function ProductsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            This permanently deletes the product and everything researched under it — companies, ICPs, investor
+            matches, content, campaigns, outreach, and competitor tracking. This can&apos;t be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)} disabled={deleteProduct.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteProduct.mutate(deleteTarget.id)}
+              disabled={deleteProduct.isPending}
+            >
+              {deleteProduct.isPending ? "Deleting…" : "Delete product"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function ProductCard({ product, selected, onSelect }: { product: Product; selected: boolean; onSelect: () => void }) {
+function ProductCard({
+  product, selected, onSelect, onDelete,
+}: {
+  product: Product; selected: boolean; onSelect: () => void; onDelete: () => void;
+}) {
   const workspace = useAppStore((s) => s.workspace);
   const queryClient = useQueryClient();
 
@@ -162,7 +208,18 @@ function ProductCard({ product, selected, onSelect }: { product: Product; select
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>{product.name}</CardTitle>
-          {product.is_demo && <Badge variant="muted">DEMO</Badge>}
+          <div className="flex items-center gap-1.5">
+            {product.is_demo && <Badge variant="muted">DEMO</Badge>}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-[var(--muted-foreground)] hover:text-[var(--danger)]"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              aria-label={`Delete ${product.name}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
         <CardDescription>{product.description || "No description yet."}</CardDescription>
       </CardHeader>
