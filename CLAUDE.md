@@ -57,36 +57,57 @@ that adds a `NOT NULL` column to a table with existing rows, add
 `server_default=` by hand — Alembic's autogenerate never adds it, and the
 migration will fail against live data without it.
 
-**Deploys are real and immediate — but don't assume auto-deploy actually
-fired.** A push to `origin/main` is *supposed to* trigger Render (API) and
-Vercel (web) to redeploy automatically (`autoDeploy: yes` on the Render
-service, confirmed via `GET /v1/services/{id}`) — there is no staging
-environment and no manual promote step. In practice this has already
-silently failed to fire once: the video-removal commit (`0656892`) sat
-unpicked-up on Render for half an hour while the live API kept running the
-prior commit against the already-migrated database, throwing
-`UndefinedColumn: content_variants.video_id` 500s on every endpoint that
-touched `ContentVariant` (content generate/plan-today/queue/calendar,
-campaign content generation, learning analysis) until a deploy was
-triggered by hand via `POST /v1/services/{id}/deploys` (Render API key in
-`.env.deploy`, `RENDER_API_KEY`). **After any push that matters, check
-`GET /v1/services/{id}/deploys?limit=1` (or the Render dashboard) shows a
-`live` deploy at the new commit SHA before trusting that production
-reflects `main`** — a schema migration landing on a stale running deploy is
-exactly the failure mode that produces confusing, code-doesn't-match-DB 500s.
-Always confirm with the user before `git push`ing to main or before
-triggering a Render deploy directly, even if they approved a previous one
-earlier in the session; each deploy needs its own confirmation.
+**A push to `origin/main` does not reliably deploy either service — verify,
+never assume.** There is no staging environment and no manual promote step,
+which makes it easy to assume "pushed" means "live." It doesn't:
 
-**The self-hosted SearxNG search provider can go quietly to zero results.**
-`gruvle-reach-searxng.onrender.com` (also free-tier) is the default
-`SearchProvider`. Its upstream engines (Brave, DuckDuckGo, Google CSE,
-Startpage) rate-limit or CAPTCHA-block cloud/datacenter IPs independently of
-anything in this repo — confirmed live via `GET /search?q=...&format=json`
-returning `"unresponsive_engines": [["brave","Suspended: too many
-requests"], ["google cse","Suspended: too many requests"], ["startpage",
-"Suspended: CAPTCHA"], ...]`. Every discovery feature built on search
-(company/investor/marketing discovery, brand mention scanning) degrades
+- **Render (API)** has `autoDeploy: yes` (confirmed via `GET /v1/services/{id}`)
+  and usually redeploys on push, but the webhook has already silently failed
+  to fire once: the video-removal commit (`0656892`) sat unpicked-up for half
+  an hour while the live API kept running the prior commit against the
+  already-migrated database, throwing `UndefinedColumn:
+  content_variants.video_id` 500s on every endpoint touching `ContentVariant`
+  (content generate/plan-today/queue/calendar, campaign content generation,
+  learning analysis) until fixed by hand via
+  `POST /v1/services/{id}/deploys` (Render API key in `.env.deploy`,
+  `RENDER_API_KEY`). Verify: `GET /v1/services/{id}/deploys?limit=1` shows a
+  `live` deploy at the new commit SHA.
+- **Vercel (web) has no working git-push integration at all on this
+  project** — confirmed via `gh api repos/.../deployments` and
+  `.../commits/{sha}/check-runs` both returning empty for this repo's entire
+  history, and directly observed: after a push, the live site's `ETag`
+  stayed byte-identical and `Age` climbed in lockstep with real time for 5+
+  minutes straight — a stale edge cache being served forever, not a slow
+  rollout. Every frontend deploy has to be triggered by hand:
+  `cd apps/web && VERCEL_TOKEN=... npx vercel --prod --yes` (token in
+  `.env.deploy`). Verify: refetch a page and confirm the `ETag` changed and
+  `X-Vercel-Cache` reads `PRERENDER`/`MISS`, not a long-lived `HIT`.
+
+Always confirm with the user before `git push`ing to main or before
+triggering either deploy directly, even if they approved a previous one
+earlier in the session — each deploy needs its own confirmation. And after
+triggering one, confirm it actually landed using the checks above before
+telling the user it's live.
+
+**The self-hosted SearxNG search provider can go quietly to zero results —
+and this looks structural, not transient.** `gruvle-reach-searxng.onrender.com`
+(also free-tier) is the default `SearchProvider`. Its upstream engines
+rate-limit or CAPTCHA-block cloud/datacenter IPs independently of anything
+in this repo. Confirmed live via `GET /search?q=...&format=json`: with only
+the default 4 engines enabled (brave/duckduckgo/google cse/startpage), all
+4 failed. Tried widening the pool (`infra/searxng/settings.yml`'s `engines:`
+list) to 7 engines total plus an increased per-engine timeout
+(`outgoing.request_timeout: 8.0`) — every single one still failed:
+brave/google cse rate-limited, startpage/qwant CAPTCHA-blocked,
+duckduckgo/mojeek timed out even at 8s, yahoo hit an "HTTP protocol error"
+(likely an engine-module compatibility issue, not a block). This is
+consistent with the broader trend of search engines fingerprinting and
+blocking known cloud-hosting IP ranges, not something fixable by picking a
+different scraping-based engine — a real fix likely needs either an
+official paid/free-tier search API (e.g. Brave Search API with a real API
+key, not scraping) or a residential/rotating proxy in front of SearxNG,
+both bigger changes than a settings tweak. Every discovery feature built on
+search (company/investor/marketing discovery, brand mention scanning) degrades
 gracefully to an empty list when this happens — no error, just nothing
 found — which is correct behavior for the provider abstraction but can look
 identical to "the feature is broken" from the outside. If a discovery
