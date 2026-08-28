@@ -42,6 +42,29 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.discover_marketing_opportunities_for_all_products",
         "schedule": crontab(day_of_week=3, hour=6, minute=0),
     },
+    # §2-22 Autonomous Daily Content & Promotion Engine — bounded (MAX_DAILY_
+    # CONTENT_ITEMS, MAX_DAILY_VIDEOS), default human-approval-required
+    # before anything publishes (§19).
+    "daily-content-planning": {
+        "task": "app.workers.tasks.plan_and_generate_daily_content",
+        "schedule": crontab(hour=8, minute=0),
+    },
+    "daily-video-generation": {
+        "task": "app.workers.tasks.generate_daily_videos",
+        "schedule": crontab(hour=8, minute=30),  # after planning, so READY variants exist to attach to
+    },
+    "content-quality-sweep": {
+        "task": "app.workers.tasks.run_content_quality_scan",
+        "schedule": crontab(minute=0),  # hourly
+    },
+    "publish-due-content": {
+        "task": "app.workers.tasks.publish_due_content",
+        "schedule": crontab(minute="*/15"),
+    },
+    "weekly-content-learning": {
+        "task": "app.workers.tasks.run_content_learning",
+        "schedule": crontab(day_of_week=5, hour=6, minute=0),
+    },
 }
 
 celery_app.autodiscover_tasks(["app.workers"])

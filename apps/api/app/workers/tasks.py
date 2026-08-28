@@ -148,6 +148,236 @@ def discover_investors_for_all_products() -> int:
 
 
 @celery_app.task
+def plan_and_generate_daily_content() -> int:
+    """§2-4 daily content planning — zero-input, bounded (MAX_DAILY_CONTENT_ITEMS),
+    mix-balanced. Reactive/competitive ideas land APPROVAL_REQUIRED and are
+    never auto-scheduled (§5, §7)."""
+    from app.agents.content_pipeline import generate_and_gate_variants, get_brand, get_truth
+    from app.agents.content_strategy_agent import AUTONOMOUS_CHANNELS, plan_daily_content
+    from app.db.models.content import Content
+    from app.db.models.opportunity import Opportunity
+
+    db: Session = SessionLocal()
+    total = 0
+    try:
+        products = db.execute(select(Product)).scalars().all()
+        for product in products:
+            try:
+                brand = get_brand(db, product.workspace_id, product.id)
+                truth = get_truth(db, product.id)
+                ideas = plan_daily_content(db, workspace_id=product.workspace_id, product_id=product.id, brand=brand)
+                for idea in ideas:
+                    content = Content(
+                        workspace_id=product.workspace_id, product_id=product.id, idea=idea["idea"],
+                        content_type=idea["content_type"], origin=idea["origin"],
+                    )
+                    db.add(content)
+                    db.flush()
+                    generate_and_gate_variants(
+                        db, content=content, brand=brand, truth=truth,
+                        channels=AUTONOMOUS_CHANNELS, cta_hint=idea["cta_hint"],
+                    )
+                    if idea.get("source_opportunity_id"):
+                        opportunity = db.get(Opportunity, idea["source_opportunity_id"])
+                        if opportunity is not None:
+                            opportunity.status = "actioned"
+                    total += 1
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return total
+
+
+@celery_app.task
+def generate_daily_videos() -> int:
+    """§8-10 daily video generation — MAX_DAILY_VIDEOS=1/product, picks the
+    top idea from today's autonomous content plan. Runs after
+    plan_and_generate_daily_content in the beat schedule so READY variants
+    already exist to attach the video to."""
+    import datetime as dt
+
+    from app.agents.content_pipeline import get_brand, get_truth
+    from app.agents.video_pipeline import generate_video_for_idea
+    from app.db.models.content import Content, ContentVariant
+    from app.db.models.enums import ContentStatus
+    from app.db.models.video import Video
+
+    db: Session = SessionLocal()
+    count = 0
+    try:
+        today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        products = db.execute(select(Product)).scalars().all()
+        for product in products:
+            try:
+                already_today = db.execute(
+                    select(Video.id).where(Video.product_id == product.id, Video.created_at >= today_start)
+                ).scalar_one_or_none()
+                if already_today is not None:
+                    continue
+
+                content = db.execute(
+                    select(Content)
+                    .where(
+                        Content.workspace_id == product.workspace_id, Content.product_id == product.id,
+                        Content.origin == "autonomous", Content.created_at >= today_start,
+                    )
+                    .order_by(Content.created_at.desc())
+                ).scalars().first()
+                if content is None:
+                    continue
+
+                variant = db.execute(
+                    select(ContentVariant).where(ContentVariant.content_id == content.id, ContentVariant.status == ContentStatus.READY)
+                ).scalars().first()
+
+                brand = get_brand(db, product.workspace_id, product.id)
+                truth = get_truth(db, product.id)
+                video = generate_video_for_idea(
+                    db, workspace_id=product.workspace_id, product_id=product.id, idea=content.idea,
+                    brand=brand, truth=truth, cta_hint=(variant.cta if variant else ""),
+                    content_variant_id=variant.id if variant else None,
+                )
+                if video is not None and video.storage_url and variant is not None:
+                    variant.video_id = video.id
+                    variant.media_refs = [video.storage_url]
+                if video is not None:
+                    count += 1
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return count
+
+
+@celery_app.task
+def run_content_quality_scan() -> int:
+    """§28-29 hourly safety net — re-gates any DRAFT/READY variant still
+    sitting there after a couple of hours, covering the regenerate/manual-
+    idea paths that don't go through the daily planning task."""
+    import datetime as dt
+
+    from app.agents.content_pipeline import get_brand, get_truth
+    from app.agents.content_quality_gate import run_quality_gate
+    from app.db.models.content import Content, ContentVariant
+    from app.db.models.enums import ContentStatus
+
+    db: Session = SessionLocal()
+    count = 0
+    try:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
+        rows = db.execute(
+            select(ContentVariant, Content)
+            .join(Content, Content.id == ContentVariant.content_id)
+            .where(ContentVariant.status.in_([ContentStatus.DRAFT, ContentStatus.READY]), ContentVariant.created_at <= cutoff)
+        ).all()
+        for variant, content in rows:
+            try:
+                brand = get_brand(db, content.workspace_id, content.product_id)
+                truth = get_truth(db, content.product_id)
+                gate_result = run_quality_gate(db, variant=variant, content=content, brand=brand, truth=truth, ai_provider=get_ai_provider())
+                variant.status = ContentStatus.READY if gate_result.passed else ContentStatus.FAILED
+                variant.quality_flags = (
+                    {"warnings": gate_result.warnings} if gate_result.passed else {"blocking_reasons": gate_result.blocking_reasons}
+                )
+                count += 1
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return count
+
+
+@celery_app.task
+def publish_due_content() -> int:
+    """§18-20 — publishes SCHEDULED content whose scheduled_at has passed.
+    A channel that isn't connected leaves the variant SCHEDULED and just
+    logs it — never silently dropped; connecting the platform later still
+    finds it queued."""
+    import datetime as dt
+    import logging
+
+    from app.actions import content_executor
+    from app.db.models.content import Content, ContentVariant
+    from app.db.models.enums import ContentStatus, IntegrationStatus, OrgRole
+    from app.db.models.integration import Integration
+    from app.db.models.tenancy import Workspace
+    from app.providers.social.factory import get_social_access_token_for_workspace, get_social_providers
+
+    logger = logging.getLogger(__name__)
+    db: Session = SessionLocal()
+    count = 0
+    try:
+        now = dt.datetime.now(dt.timezone.utc)
+        due = db.execute(
+            select(ContentVariant, Content)
+            .join(Content, Content.id == ContentVariant.content_id)
+            .where(ContentVariant.status == ContentStatus.SCHEDULED, ContentVariant.scheduled_at <= now)
+        ).all()
+        social_providers = get_social_providers()
+        for variant, content in due:
+            try:
+                integration = db.execute(
+                    select(Integration).where(
+                        Integration.workspace_id == content.workspace_id,
+                        Integration.provider_name == variant.channel,
+                        Integration.status == IntegrationStatus.CONNECTED,
+                    )
+                ).scalar_one_or_none()
+                if integration is None:
+                    logger.info("Scheduled content variant %s waiting — %s not connected", variant.id, variant.channel)
+                    continue
+
+                social_provider = social_providers.get(variant.channel)
+                if social_provider is None:
+                    continue
+                access_token = get_social_access_token_for_workspace(db, content.workspace_id, variant.channel)
+                workspace = db.get(Workspace, content.workspace_id)
+
+                content_executor.publish_content_variant(
+                    db, variant=variant, content=content, approver_role=OrgRole.OWNER, approver_id=integration.connected_by,
+                    organization_id=workspace.organization_id, workspace_id=content.workspace_id,
+                    social_provider=social_provider, access_token=access_token,
+                )
+                count += 1
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return count
+
+
+@celery_app.task
+def run_content_learning() -> int:
+    """§22 weekly content-performance learning."""
+    from app.agents.learning_agent import run_content_learning_analysis
+
+    db: Session = SessionLocal()
+    total = 0
+    try:
+        products = db.execute(select(Product)).scalars().all()
+        for product in products:
+            try:
+                insights = run_content_learning_analysis(db, workspace_id=product.workspace_id, product_id=product.id)
+                total += len(insights)
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return total
+
+
+@celery_app.task
 def discover_marketing_opportunities_for_all_products() -> int:
     """§22 weekly autonomous marketing-opportunity discovery."""
     from app.agents.marketing_discovery_agent import MarketingDiscoveryAgent

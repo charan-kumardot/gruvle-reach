@@ -20,6 +20,7 @@ import {
   Shield,
   Radar,
   Eye,
+  Clapperboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { href: "/visibility", label: "Visibility", icon: Eye },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/content", label: "Content", icon: PenSquare },
+  { href: "/videos", label: "Videos", icon: Clapperboard },
   { href: "/outreach", label: "Outreach", icon: Send },
   { href: "/competitors", label: "Competitors", icon: Swords },
   { href: "/brand", label: "Brand", icon: Radio },

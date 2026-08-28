@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routers import (
     actions,
@@ -19,6 +22,7 @@ from app.api.routers import (
     products,
     research,
     settings as settings_router,
+    videos,
     visibility,
 )
 from app.core.config import get_settings
@@ -58,8 +62,16 @@ for router in (
     integrations.router,
     settings_router.router,
     visibility.router,
+    videos.router,
 ):
     app.include_router(router, prefix="/api/v1")
+
+# Dev-only fallback media mount — serves LocalDiskStorageProvider uploads
+# when Supabase Storage isn't configured. Never the durable path in
+# production (see app/media/storage_local.py).
+_media_root = Path(__file__).resolve().parent.parent / "media_files"
+_media_root.mkdir(exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(_media_root)), name="media")
 
 
 @app.get("/health")

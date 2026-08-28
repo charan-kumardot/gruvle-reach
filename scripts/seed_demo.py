@@ -131,8 +131,8 @@ def main() -> None:
                 key_messages=["Change is the #1 cause of incidents", "AI-explained, not just AI-detected"],
                 words_to_use=["change intelligence", "root cause", "before it breaks"],
                 words_to_avoid=["revolutionary", "game-changing", "disrupt"],
-                claims=["[DEMO] Detects the top 5 change types that cause outages"],
-                proof_points=["[DEMO] Early design partners report faster incident triage"],
+                claims=["[DEMO] Detects changes across your stack", "[DEMO] Explains the likely impact of a change"],
+                proof_points=["[DEMO] Correlates changes with the incidents they likely caused"],
                 founder_story="[DEMO] Built after one too many 3am pages caused by an undocumented config change.",
                 product_facts=["[DEMO] Ingests deploy, config, and infra change events", "[DEMO] Works with GitHub, Kubernetes, Terraform"],
             )

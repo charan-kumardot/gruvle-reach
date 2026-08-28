@@ -7,10 +7,17 @@ import uuid
 
 import pytest
 
-from app.agents.learning_agent import MIN_SAMPLE_SIZE, _confidence_for_sample, _upsert_insight, analyze_outreach_by_industry
+from app.agents.learning_agent import (
+    MIN_SAMPLE_SIZE,
+    _confidence_for_sample,
+    _upsert_insight,
+    analyze_content_by_channel,
+    analyze_outreach_by_industry,
+)
 from app.core.security import hash_password
 from app.db.models.company import Company
-from app.db.models.enums import OrgRole, PipelineStage
+from app.db.models.content import Content, ContentVariant
+from app.db.models.enums import ContentStatus, OrgRole, PipelineStage
 from app.db.models.outreach import Outreach
 from app.db.models.product import Product
 from app.db.models.tenancy import Organization, User, Workspace
@@ -111,4 +118,60 @@ def test_analyze_outreach_by_industry_surfaces_real_signal(db, workspace_and_pro
 
     insights = analyze_outreach_by_industry(db, workspace_id=workspace.id, product_id=product.id)
     assert any("AI SaaS" in i.hypothesis for i in insights)
+    db.rollback()
+
+
+def _make_measured_variant(db, workspace_id, product_id, *, channel: str, impressions: int, engaged: int) -> ContentVariant:
+    content = Content(workspace_id=workspace_id, product_id=product_id, idea="test idea")
+    db.add(content)
+    db.flush()
+    variant = ContentVariant(
+        content_id=content.id, channel=channel, body="test", status=ContentStatus.PUBLISHED,
+        performance={"impressions": impressions, "likes": engaged, "comments": 0, "shares": 0},
+    )
+    db.add(variant)
+    db.flush()
+    return variant
+
+
+def test_content_learning_needs_minimum_sample_per_channel(db, workspace_and_product):
+    workspace, product = workspace_and_product
+
+    # Only 3 measured LinkedIn variants — below MIN_SAMPLE_SIZE, must not surface.
+    for _ in range(3):
+        _make_measured_variant(db, workspace.id, product.id, channel="linkedin", impressions=100, engaged=50)
+    for _ in range(3):
+        _make_measured_variant(db, workspace.id, product.id, channel="x", impressions=100, engaged=1)
+
+    insights = analyze_content_by_channel(db, workspace_id=workspace.id, product_id=product.id)
+    assert insights == []
+    db.rollback()
+
+
+def test_content_learning_ignores_unmeasured_variants(db, workspace_and_product):
+    workspace, product = workspace_and_product
+
+    content = Content(workspace_id=workspace.id, product_id=product.id, idea="unmeasured")
+    db.add(content)
+    db.flush()
+    for _ in range(10):
+        db.add(ContentVariant(content_id=content.id, channel="linkedin", body="never published", status=ContentStatus.READY))
+    db.flush()
+
+    insights = analyze_content_by_channel(db, workspace_id=workspace.id, product_id=product.id)
+    assert insights == []  # zero measured variants -> nothing to learn from, not treated as a 0% rate
+    db.rollback()
+
+
+def test_content_learning_surfaces_real_signal(db, workspace_and_product):
+    workspace, product = workspace_and_product
+
+    # LinkedIn: 50% engagement rate (high). X: ~2% engagement rate (low, baseline-dragging).
+    for _ in range(6):
+        _make_measured_variant(db, workspace.id, product.id, channel="linkedin", impressions=100, engaged=50)
+    for _ in range(6):
+        _make_measured_variant(db, workspace.id, product.id, channel="x", impressions=100, engaged=2)
+
+    insights = analyze_content_by_channel(db, workspace_id=workspace.id, product_id=product.id)
+    assert any("linkedin" in i.hypothesis for i in insights)
     db.rollback()

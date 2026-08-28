@@ -73,8 +73,24 @@ class Settings(BaseSettings):
     instagram_app_secret: str = ""
     producthunt_client_id: str = ""
     producthunt_client_secret: str = ""
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    facebook_app_id: str = ""
+    facebook_app_secret: str = ""
 
     slack_webhook_url: str = ""
+
+    # Storage (generated video/image assets) — Supabase Storage reuses the
+    # same project as the shared Postgres database; local disk is a
+    # dev-only fallback when it isn't configured (see app/media/storage_*).
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    supabase_storage_bucket: str = "gruvle-media"
+
+    # Video generation — free-first template pipeline is the only
+    # implementation today; the setting exists so a paid provider can be
+    # added later without touching call sites.
+    video_provider: Literal["template"] = "template"
 
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 

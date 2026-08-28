@@ -12,7 +12,9 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.cta_rules import CTA_BY_INTENT
 from app.db.models.company import Company, CompanyTrigger
+from app.db.models.content import Content, ContentVariant
 from app.db.models.enums import LearningInsightStatus, PipelineStage
 from app.db.models.growth import LearningInsight
 from app.db.models.investor import InvestorInteraction
@@ -148,7 +150,94 @@ def analyze_outreach_by_trigger(db: Session, *, workspace_id: uuid.UUID, product
     return insights
 
 
+def _measured_content_variants(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[tuple[ContentVariant, Content]]:
+    """Only variants a connected SocialProvider actually reported metrics
+    for (performance dict has an 'impressions' key) — an unmeasured variant
+    is excluded from the sample, never treated as zero engagement."""
+    rows = db.execute(
+        select(ContentVariant, Content)
+        .join(Content, Content.id == ContentVariant.content_id)
+        .where(Content.workspace_id == workspace_id, Content.product_id == product_id)
+    ).all()
+    return [(v, c) for v, c in rows if v.performance and "impressions" in v.performance]
+
+
+def _engagement_rate(variant: ContentVariant) -> float:
+    perf = variant.performance
+    impressions = max(int(perf.get("impressions", 0)), 1)
+    engaged = int(perf.get("likes", 0)) + int(perf.get("comments", 0)) + int(perf.get("shares", 0))
+    return engaged / impressions
+
+
+def _analyze_content_by(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID, dimension: str, group_fn) -> list[LearningInsight]:
+    measured = _measured_content_variants(db, workspace_id=workspace_id, product_id=product_id)
+    if not measured:
+        return []
+
+    by_group: dict[str, list[float]] = defaultdict(list)
+    all_rates: list[float] = []
+    for variant, content in measured:
+        label = group_fn(variant, content)
+        if not label:
+            continue
+        rate = _engagement_rate(variant)
+        by_group[label].append(rate)
+        all_rates.append(rate)
+
+    if not all_rates:
+        return []
+    baseline_rate = sum(all_rates) / len(all_rates)
+    total_sample = len(all_rates)
+
+    insights = []
+    for label, rates in by_group.items():
+        n = len(rates)
+        group_rate = sum(rates) / n
+        insight = _upsert_insight(
+            db, workspace_id=workspace_id, product_id=product_id, dimension=dimension,
+            group_label=label, group_rate=group_rate, baseline_rate=baseline_rate,
+            sample_size=total_sample, group_n=n,
+        )
+        if insight:
+            insights.append(insight)
+    db.flush()
+    return insights
+
+
+_CTA_LABEL_BY_TEXT = {text: intent for intent, text in CTA_BY_INTENT.items()}
+
+
+def analyze_content_by_channel(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[LearningInsight]:
+    return _analyze_content_by(
+        db, workspace_id=workspace_id, product_id=product_id, dimension="content_channel",
+        group_fn=lambda variant, content: f"{variant.channel} posts" if variant.channel else "",
+    )
+
+
+def analyze_content_by_content_type(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[LearningInsight]:
+    return _analyze_content_by(
+        db, workspace_id=workspace_id, product_id=product_id, dimension="content_type",
+        group_fn=lambda variant, content: f"{content.content_type} content" if content.content_type else "",
+    )
+
+
+def analyze_content_by_cta(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[LearningInsight]:
+    def _label(variant: ContentVariant, content: Content) -> str:
+        intent = _CTA_LABEL_BY_TEXT.get(variant.cta, "")
+        return f"'{intent}'-style CTAs" if intent else ""
+
+    return _analyze_content_by(db, workspace_id=workspace_id, product_id=product_id, dimension="content_cta", group_fn=_label)
+
+
+def run_content_learning_analysis(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[LearningInsight]:
+    insights = analyze_content_by_channel(db, workspace_id=workspace_id, product_id=product_id)
+    insights += analyze_content_by_content_type(db, workspace_id=workspace_id, product_id=product_id)
+    insights += analyze_content_by_cta(db, workspace_id=workspace_id, product_id=product_id)
+    return insights
+
+
 def run_learning_analysis(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID) -> list[LearningInsight]:
     insights = analyze_outreach_by_industry(db, workspace_id=workspace_id, product_id=product_id)
     insights += analyze_outreach_by_trigger(db, workspace_id=workspace_id, product_id=product_id)
+    insights += run_content_learning_analysis(db, workspace_id=workspace_id, product_id=product_id)
     return insights

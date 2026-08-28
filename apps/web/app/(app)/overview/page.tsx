@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, TrendingUp, Users, Landmark, Radio, Lightbulb } from "lucide-react";
+import { Sparkles, TrendingUp, Users, Landmark, Radio, Lightbulb, PenSquare } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
-import type { ActionItem, BrandMention, Company, DashboardAnalytics, InvestorMatch, Investor, LearningInsight } from "@/lib/types";
+import type { ActionItem, BrandMention, Company, ContentVariant, DashboardAnalytics, InvestorMatch, Investor, LearningInsight } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/app/empty-state";
 import { ActionCard } from "@/components/app/action-card";
@@ -51,6 +52,12 @@ export default function OverviewPage() {
   const { data: brandMentions } = useQuery({
     queryKey: ["brand-mentions", wsId],
     queryFn: () => api.get<BrandMention[]>(`/workspaces/${wsId}/brand/mentions`),
+    enabled: !!wsId,
+  });
+
+  const { data: contentQueue } = useQuery({
+    queryKey: ["content-queue", wsId],
+    queryFn: () => api.get<ContentVariant[]>(`/workspaces/${wsId}/content/queue`),
     enabled: !!wsId,
   });
 
@@ -138,6 +145,30 @@ export default function OverviewPage() {
         </div>
 
         <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><PenSquare className="h-3.5 w-3.5" /> Today&apos;s content</CardTitle>
+                <Link href="/content"><Button size="sm" variant="ghost">Review all</Button></Link>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 pt-0">
+              {contentQueue && contentQueue.length > 0 ? (
+                <>
+                  <p className="text-xs text-[var(--muted-foreground)]">{contentQueue.length} asset{contentQueue.length === 1 ? "" : "s"} ready for review</p>
+                  {contentQueue.slice(0, 3).map((v) => (
+                    <div key={v.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-[var(--border-subtle)]">
+                      <span className="truncate text-sm">{v.body || "(no text)"}</span>
+                      <Badge variant="outline">{v.channel}</Badge>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-xs text-[var(--muted-foreground)]">No content waiting for review — visit the Content page to plan today&apos;s ideas.</p>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Users className="h-3.5 w-3.5" /> Top customer prospects</CardTitle>

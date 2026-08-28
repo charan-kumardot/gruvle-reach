@@ -2,17 +2,17 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Megaphone, Plus } from "lucide-react";
+import { Megaphone, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
-import type { Campaign } from "@/lib/types";
+import type { Campaign, CampaignMetric, ContentItem } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -20,6 +20,7 @@ export default function CampaignsPage() {
   const { workspace, product } = useAppStore();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Campaign | null>(null);
   const [form, setForm] = useState({ name: "", goal: "", audience_description: "" });
 
   const { data: campaigns } = useQuery({
@@ -58,7 +59,7 @@ export default function CampaignsPage() {
       {campaigns && campaigns.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {campaigns.map((c) => (
-            <Card key={c.id}>
+            <Card key={c.id} className="cursor-pointer" onClick={() => setSelected(c)}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>{c.name}</CardTitle>
@@ -96,6 +97,100 @@ export default function CampaignsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <CampaignDetailDialog campaign={selected} onClose={() => setSelected(null)} />
     </div>
+  );
+}
+
+function CampaignDetailDialog({ campaign, onClose }: { campaign: Campaign | null; onClose: () => void }) {
+  const { workspace } = useAppStore();
+  const queryClient = useQueryClient();
+
+  const { data: content } = useQuery({
+    queryKey: ["campaign-content", campaign?.id],
+    queryFn: () => api.get<ContentItem[]>(`/workspaces/${workspace!.id}/campaigns/${campaign!.id}/content`),
+    enabled: !!workspace && !!campaign,
+  });
+
+  const { data: metrics } = useQuery({
+    queryKey: ["campaign-metrics", campaign?.id],
+    queryFn: () => api.get<CampaignMetric[]>(`/workspaces/${workspace!.id}/campaigns/${campaign!.id}/metrics`),
+    enabled: !!workspace && !!campaign,
+  });
+
+  const generateContent = useMutation({
+    mutationFn: () => api.post<ContentItem[]>(`/workspaces/${workspace!.id}/campaigns/${campaign!.id}/generate-content`, { count: 5 }),
+    onSuccess: (items) => {
+      toast.success(`Generated ${items.length} campaign asset${items.length === 1 ? "" : "s"}`);
+      queryClient.invalidateQueries({ queryKey: ["campaign-content", campaign?.id] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Requires the admin role, or generation failed"),
+  });
+
+  const activate = useMutation({
+    mutationFn: () => api.patch(`/workspaces/${workspace!.id}/campaigns/${campaign!.id}`, { status: "active" }),
+    onSuccess: () => {
+      toast.success("Campaign activated");
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Requires the admin role"),
+  });
+
+  if (!campaign) return null;
+
+  return (
+    <Dialog open={!!campaign} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <DialogTitle>{campaign.name}</DialogTitle>
+            <Badge variant="outline">{campaign.status}</Badge>
+          </div>
+          <DialogDescription>{campaign.goal || "No goal set"} — {campaign.audience_description || "no audience set"}</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-wrap gap-2">
+          {campaign.status === "planned" && (
+            <Button size="sm" variant="secondary" onClick={() => activate.mutate()} disabled={activate.isPending}>
+              {activate.isPending ? "Activating…" : "Activate campaign"}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => generateContent.mutate()} disabled={generateContent.isPending}>
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {generateContent.isPending ? "Generating…" : "Generate content for this campaign"}
+          </Button>
+        </div>
+
+        {metrics && metrics.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {["reach", "visitors", "signups", "conversions", "responses", "meetings"].map((key) => {
+              const total = metrics.reduce((sum, m) => sum + (m[key as keyof CampaignMetric] as number || 0), 0);
+              return (
+                <div key={key} className="rounded-[var(--radius-sm)] bg-[var(--border-subtle)] p-2 text-center">
+                  <p className="text-sm font-semibold tabular-nums">{total}</p>
+                  <p className="text-[10px] capitalize text-[var(--muted-foreground)]">{key}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
+          {content && content.length > 0 ? (
+            content.map((item) => (
+              <div key={item.id} className="rounded-[var(--radius-sm)] border border-[var(--border)] p-2.5">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <Badge variant="outline">{item.content_type}</Badge>
+                  <span className="text-xs text-[var(--muted-foreground)]">{item.variants.length} variant{item.variants.length === 1 ? "" : "s"}</span>
+                </div>
+                <p className="text-xs">{item.idea}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs text-[var(--muted-foreground)]">No content generated for this campaign yet.</p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

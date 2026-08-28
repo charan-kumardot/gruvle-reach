@@ -27,6 +27,9 @@ venv/
 *.sqlite3
 pgdata/
 
+# local media (dev-only fallback storage, see app/media/storage_local.py)
+media_files/
+
 # os
 .DS_Store
 Thumbs.db

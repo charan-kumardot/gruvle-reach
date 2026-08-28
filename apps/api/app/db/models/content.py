@@ -17,6 +17,11 @@ class Content(Base, UUIDPKMixin, TimestampMixin):
     idea: Mapped[str] = mapped_column(Text)
     status: Mapped[ContentStatus] = mapped_column(Enum(ContentStatus, native_enum=False, length=20), default=ContentStatus.IDEA)
     source_idea_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("content.id", ondelete="SET NULL"), nullable=True)
+    # educational | product | authority | social_proof | engagement | promotional (§3 content mix)
+    content_type: Mapped[str] = mapped_column(String(30), default="educational")
+    # autonomous | manual | campaign | reactive — where this idea came from
+    origin: Mapped[str] = mapped_column(String(20), default="manual")
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True)
 
     variants: Mapped[list["ContentVariant"]] = relationship(back_populates="content", foreign_keys="ContentVariant.content_id")
 
@@ -34,3 +39,10 @@ class ContentVariant(Base, UUIDPKMixin, TimestampMixin):
     approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     performance: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # platform-specific rendering hint, e.g. "post" | "thread" | "carousel" | "reel" | "short_video"
+    platform_format: Mapped[str] = mapped_column(String(30), default="post")
+    cta: Mapped[str] = mapped_column(String(200), default="")
+    scheduled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_reason: Mapped[str] = mapped_column(Text, default="")
+    quality_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    video_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("videos.id", ondelete="SET NULL"), nullable=True)

@@ -19,6 +19,7 @@ from app.db.models import (  # noqa: F401
     product,
     research,
     tenancy,
+    video,
     visibility,
 )
 
@@ -41,5 +42,6 @@ __all__ = [
     "product",
     "research",
     "tenancy",
+    "video",
     "visibility",
 ]

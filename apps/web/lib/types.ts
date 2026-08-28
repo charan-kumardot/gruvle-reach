@@ -12,7 +12,10 @@ export type OpportunityType =
 export type LearningInsightStatus = "pending" | "accepted" | "ignored";
 export type ActionStatus = "today" | "upcoming" | "waiting" | "completed" | "snoozed";
 export type ActionCategory = "customer" | "investor" | "marketing" | "content" | "competitor" | "launch" | "visibility";
-export type ContentStatus = "idea" | "draft" | "approved" | "published";
+export type ContentStatus =
+  | "idea" | "generating" | "draft" | "ready" | "approval_required" | "approved"
+  | "scheduled" | "published" | "failed" | "rejected" | "archived";
+export type VideoStatus = "script_ready" | "rendering" | "ready" | "failed";
 export type OutreachMessageStatus = "drafted" | "approved" | "sent" | "rejected";
 export type MentionCategory = "positive" | "neutral" | "negative" | "question" | "purchase_intent" | "competitor_comparison" | "feedback";
 
@@ -310,12 +313,38 @@ export interface Campaign {
   end_date: string | null;
 }
 
+export interface CampaignMetric {
+  id: string;
+  campaign_id: string;
+  channel: string;
+  metric_date: string;
+  reach: number;
+  visitors: number;
+  signups: number;
+  conversions: number;
+  responses: number;
+  meetings: number;
+  attribution: string;
+  source_detail: string;
+}
+
 export interface ContentVariant {
   id: string;
   content_id: string;
   channel: string;
   body: string;
   status: ContentStatus;
+  media_refs: string[];
+  performance: Record<string, number>;
+  approved_by: string | null;
+  approved_at: string | null;
+  published_at: string | null;
+  platform_format: string;
+  cta: string;
+  scheduled_at: string | null;
+  rejected_reason: string;
+  quality_flags: { blocking_reasons?: string[]; warnings?: string[] };
+  video_id: string | null;
 }
 
 export interface ContentItem {
@@ -325,7 +354,25 @@ export interface ContentItem {
   idea: string;
   status: ContentStatus;
   source_idea_id: string | null;
+  content_type: string;
+  origin: string;
+  campaign_id: string | null;
   variants: ContentVariant[];
+}
+
+export interface Video {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  content_variant_id: string | null;
+  script: { hook?: string; problem?: string; insight?: string; solution?: string; product?: string; cta?: string };
+  aspect_ratio: string;
+  duration_seconds: number;
+  has_voiceover: boolean;
+  storage_url: string;
+  status: VideoStatus;
+  render_log: string;
+  rendered_at: string | null;
 }
 
 export interface OutreachMessage {

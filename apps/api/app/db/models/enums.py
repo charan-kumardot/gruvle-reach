@@ -96,9 +96,16 @@ class ActionCategory(str, enum.Enum):
 
 class ContentStatus(str, enum.Enum):
     IDEA = "idea"
+    GENERATING = "generating"
     DRAFT = "draft"
+    READY = "ready"
+    APPROVAL_REQUIRED = "approval_required"
     APPROVED = "approved"
+    SCHEDULED = "scheduled"
     PUBLISHED = "published"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
 
 
 class OutreachMessageStatus(str, enum.Enum):
@@ -209,3 +216,13 @@ class LearningInsightStatus(str, enum.Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     IGNORED = "ignored"
+
+
+# ---- Daily Content & Promotion Engine -----------------------------------
+
+
+class VideoStatus(str, enum.Enum):
+    SCRIPT_READY = "script_ready"
+    RENDERING = "rendering"
+    READY = "ready"
+    FAILED = "failed"

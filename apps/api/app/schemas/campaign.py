@@ -28,6 +28,19 @@ class CampaignResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CampaignUpdateRequest(BaseModel):
+    name: str | None = None
+    goal: str | None = None
+    audience_description: str | None = None
+    status: str | None = None  # planned, active, completed, paused
+    start_date: dt.date | None = None
+    end_date: dt.date | None = None
+
+
+class CampaignGenerateContentRequest(BaseModel):
+    count: int = 5
+
+
 class CampaignMetricCreateRequest(BaseModel):
     channel: str = ""
     metric_date: dt.date
