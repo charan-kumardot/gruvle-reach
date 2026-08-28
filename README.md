@@ -59,6 +59,7 @@ Full setup detail, including Ollama model selection, is in
 
 ## Documentation
 
+- [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) — every feature walked through end to end with one example product, real API output, integration requirements, and flow diagrams
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, what's fully live vs. extension points
 - [docs/SECURITY.md](docs/SECURITY.md) — tenant isolation, RBAC, SSRF protection, credential handling, approval gates
 - [docs/SETUP.md](docs/SETUP.md) — local development, environment variables, migrations
