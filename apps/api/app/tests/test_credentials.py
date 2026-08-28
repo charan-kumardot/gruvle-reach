@@ -12,13 +12,18 @@ def test_credential_roundtrip():
 
 
 def test_connect_integration_audit_log_never_contains_credential_payload(client):
+    from app.providers.search.factory import get_search_provider
     from app.tests.conftest import get_default_workspace, register_user
 
     owner = register_user(client)
     workspace_id = get_default_workspace(client, owner["headers"])
 
+    # Exercises the generic (non-social, non-github) connect path — uses
+    # whichever search provider is actually active rather than assuming
+    # it's searxng, since SEARCH_PROVIDER is deployment-configurable.
+    provider_name = get_search_provider().name
     resp = client.post(
-        f"/api/v1/workspaces/{workspace_id}/integrations/searxng/connect",
+        f"/api/v1/workspaces/{workspace_id}/integrations/{provider_name}/connect",
         headers=owner["headers"],
         json={"credential_payload": {"api_key": "THIS_MUST_NEVER_BE_LOGGED"}},
     )
