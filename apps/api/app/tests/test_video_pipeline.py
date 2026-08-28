@@ -7,7 +7,9 @@ import uuid
 
 import pytest
 
-from app.agents.video_pipeline import create_pending_video, render_video_into_row
+import datetime as dt
+
+from app.agents.video_pipeline import STALE_RENDER_MINUTES, create_pending_video, mark_stale_renders_failed, render_video_into_row
 from app.db.models.enums import VideoStatus
 from app.db.models.product import Product
 from app.db.models.tenancy import Organization, Workspace
@@ -42,3 +44,32 @@ def test_render_video_into_row_handles_missing_video_gracefully(db):
     # Should not raise even if the row was somehow deleted between creation
     # and the background thread picking it up.
     render_video_into_row(db, video_id=uuid.uuid4(), idea="test", brand=None, truth=None)
+
+
+def test_stale_render_is_marked_failed(db, workspace_and_product):
+    """A row stuck at RENDERING (e.g. the container restarted mid-render,
+    silently killing the background thread — observed live against
+    Render's free tier) must self-heal to FAILED once it's stale enough,
+    rather than a poller waiting on it forever."""
+    workspace, product = workspace_and_product
+    video = create_pending_video(db, workspace_id=workspace.id, product_id=product.id, content_variant_id=None, aspect_ratio="9:16")
+    video.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=STALE_RENDER_MINUTES + 1)
+    db.commit()
+
+    count = mark_stale_renders_failed(db, workspace_id=workspace.id)
+
+    assert count == 1
+    db.refresh(video)
+    assert video.status == VideoStatus.FAILED
+    assert "restarted" in video.render_log
+
+
+def test_fresh_render_is_not_marked_failed(db, workspace_and_product):
+    workspace, product = workspace_and_product
+    video = create_pending_video(db, workspace_id=workspace.id, product_id=product.id, content_variant_id=None, aspect_ratio="9:16")
+
+    count = mark_stale_renders_failed(db, workspace_id=workspace.id)
+
+    assert count == 0
+    db.refresh(video)
+    assert video.status == VideoStatus.RENDERING

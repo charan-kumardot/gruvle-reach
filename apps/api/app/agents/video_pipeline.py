@@ -41,6 +41,34 @@ def get_or_create_brand_kit(db: Session, *, workspace_id: uuid.UUID, product_id:
     return kit
 
 
+STALE_RENDER_MINUTES = 5
+
+
+def mark_stale_renders_failed(db: Session, *, workspace_id: uuid.UUID | None = None) -> int:
+    """Safety net for a background render thread that never reaches a
+    terminal state — observed live against Render's free tier, where the
+    container can restart mid-render (deploy, OOM, the platform's own
+    instance cycling) and silently kill the thread doing the work, leaving
+    the row stuck at RENDERING forever with no error ever recorded. Called
+    opportunistically from the GET /videos routes so a poller naturally
+    self-heals a stuck row into an honest FAILED state instead of polling
+    indefinitely against a row that will never change."""
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=STALE_RENDER_MINUTES)
+    stmt = select(Video).where(Video.status == VideoStatus.RENDERING, Video.updated_at < cutoff)
+    if workspace_id is not None:
+        stmt = stmt.where(Video.workspace_id == workspace_id)
+    stale = db.execute(stmt).scalars().all()
+    for video in stale:
+        video.status = VideoStatus.FAILED
+        video.render_log = (
+            f"Render did not complete within {STALE_RENDER_MINUTES} minutes — the server likely "
+            "restarted mid-render. Try generating again."
+        )
+    if stale:
+        db.commit()
+    return len(stale)
+
+
 def create_pending_video(
     db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID,
     content_variant_id: uuid.UUID | None, aspect_ratio: str,

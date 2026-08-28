@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.content_pipeline import get_brand, get_truth
-from app.agents.video_pipeline import create_pending_video, render_video_into_row
+from app.agents.video_pipeline import create_pending_video, mark_stale_renders_failed, render_video_into_row
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.content import Content, ContentVariant
 from app.db.models.enums import OrgRole
@@ -37,6 +37,7 @@ def _render_in_background(*, video_id: uuid.UUID, idea: str, workspace_id: uuid.
 
 @router.get("/videos", response_model=list[VideoResponse])
 def list_videos(ctx: Annotated[WorkspaceContext, Depends(require_workspace_member)], db: Annotated[Session, Depends(get_db)]):
+    mark_stale_renders_failed(db, workspace_id=ctx.workspace_id)
     return db.execute(select(Video).where(Video.workspace_id == ctx.workspace_id).order_by(Video.created_at.desc())).scalars().all()
 
 
@@ -45,6 +46,9 @@ def get_video(video_id: uuid.UUID, ctx: Annotated[WorkspaceContext, Depends(requ
     video = db.get(Video, video_id)
     if video is None or video.workspace_id != ctx.workspace_id:
         raise HTTPException(status_code=404, detail="Video not found")
+    if video.status.value == "rendering":
+        mark_stale_renders_failed(db, workspace_id=ctx.workspace_id)
+        db.refresh(video)
     return video
 
 
