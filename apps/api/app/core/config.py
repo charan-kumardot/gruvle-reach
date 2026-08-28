@@ -10,11 +10,23 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+def _find_repo_root_env_file() -> str:
+    """Look for a repo-root `.env` a few levels up from this file, for local
+    dev convenience. In a container (Docker/Render/Vercel) there is no such
+    file — env vars are injected by the platform instead — so this must
+    degrade to "no dotenv" rather than raising if the directory tree is
+    shallower than expected (e.g. /app/app/core/config.py inside the image)."""
+    here = Path(__file__).resolve()
+    for candidate in here.parents:
+        env_path = candidate / ".env"
+        if env_path.is_file():
+            return str(env_path)
+    return ""
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(_REPO_ROOT / ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=_find_repo_root_env_file(), extra="ignore")
 
     app_env: str = "development"
     secret_key: str = "insecure-dev-key-change-me"
