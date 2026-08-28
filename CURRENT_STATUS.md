@@ -1,8 +1,12 @@
 # Current status
 
-Last updated 2026-08-28, at commit `0656892` (`main`, pushed, **and confirmed
-live in production** — see the end-to-end verification below; it wasn't, for
-about half an hour, until this same pass caught and fixed it).
+Last updated 2026-08-28, at commit `b91fc0e` (`main`, pushed, **and
+confirmed live on both Render and Vercel** — API verified via a live
+deploy check plus a real production discovery run returning real
+companies, web verified via a changed `ETag`/`PRERENDER` cache header
+after a manual `vercel --prod` deploy, since this project's Vercel project
+has no working git-push auto-deploy at all — see `CLAUDE.md`'s
+deploy-verification note).
 This file is a snapshot — check `git log` for anything more recent than the
 date above rather than trusting this in perpetuity.
 
@@ -40,16 +44,20 @@ Fixed by triggering a deploy of `0656892` by hand via the Render API (see
 approve → publish-now` cycle correctly returning `manual_action_required`
 since no social channel is connected yet.
 
-**Separate, non-code finding: the self-hosted SearxNG's upstream search
-engines are currently rate-limited/blocked.** Company discovery, investor
-discovery, marketing-opportunity discovery, and brand-mention scanning all
-returned empty lists rather than erroring — correct graceful-degradation
-behavior, but root-caused to `gruvle-reach-searxng.onrender.com` itself
-returning zero results even for a trivial query like `openai`, with
-`unresponsive_engines` showing Brave and Google CSE suspended for "too many
-requests" and Startpage suspended for CAPTCHA, DuckDuckGo timing out. This
-is a search-engine-side anti-bot response to Render's IPs, not a bug in
-this repo. See `CLAUDE.md` for how to spot this again.
+**Separate, non-code finding (since fixed): the self-hosted SearxNG's
+upstream search engines were rate-limited/blocked.** Company discovery,
+investor discovery, marketing-opportunity discovery, and brand-mention
+scanning all returned empty lists rather than erroring — correct
+graceful-degradation behavior, but root-caused to
+`gruvle-reach-searxng.onrender.com` itself returning zero results even for
+a trivial query, with `unresponsive_engines` showing every available
+engine (7 tried across two rounds) rate-limited, CAPTCHA-blocked, timed
+out, or protocol-incompatible — a search-engine-side anti-bot response to
+Render's IPs, not a bug in this repo, and not something engine-picking
+could fix. **Fixed by switching the active `SEARCH_PROVIDER` to Tavily**
+(`app/providers/search/tavily_provider.py`, a real authenticated API) —
+verified live: a fresh production autonomous-discovery run against Gruvle
+Radar found real companies with real source URLs. See `CLAUDE.md`.
 
 **Everything else passed cleanly** on the first sweep: auth/org/workspace
 setup, product CRUD + AI product understanding + ICP generation, zero-input
@@ -138,12 +146,6 @@ rewritten once pushed (see `CLAUDE.md`).
   only describes Phase 1 in detail).
 - Scheduled automation doesn't run in production (see above) — the single
   biggest gap between "code exists" and "actually happens autonomously."
-- SearxNG's upstream engines are currently blocked/rate-limited (see
-  above) — every search-driven discovery feature is silently finding
-  nothing. Worth a periodic spot-check (`GET /search?q=test&format=json`
-  against the SearxNG service, check `unresponsive_engines`); may self-
-  resolve, may need an engine config change or a different free search
-  backend.
 - No hosted CI/CD, so a push landing on Render isn't automatically
   verified — pair every deploy-affecting push with a check that the new
   commit actually went `live` (see `CLAUDE.md`), not just that the push

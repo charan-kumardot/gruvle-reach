@@ -89,30 +89,26 @@ earlier in the session — each deploy needs its own confirmation. And after
 triggering one, confirm it actually landed using the checks above before
 telling the user it's live.
 
-**The self-hosted SearxNG search provider can go quietly to zero results —
-and this looks structural, not transient.** `gruvle-reach-searxng.onrender.com`
-(also free-tier) is the default `SearchProvider`. Its upstream engines
-rate-limit or CAPTCHA-block cloud/datacenter IPs independently of anything
-in this repo. Confirmed live via `GET /search?q=...&format=json`: with only
-the default 4 engines enabled (brave/duckduckgo/google cse/startpage), all
-4 failed. Tried widening the pool (`infra/searxng/settings.yml`'s `engines:`
-list) to 7 engines total plus an increased per-engine timeout
-(`outgoing.request_timeout: 8.0`) — every single one still failed:
-brave/google cse rate-limited, startpage/qwant CAPTCHA-blocked,
-duckduckgo/mojeek timed out even at 8s, yahoo hit an "HTTP protocol error"
-(likely an engine-module compatibility issue, not a block). This is
-consistent with the broader trend of search engines fingerprinting and
-blocking known cloud-hosting IP ranges, not something fixable by picking a
-different scraping-based engine — a real fix likely needs either an
-official paid/free-tier search API (e.g. Brave Search API with a real API
-key, not scraping) or a residential/rotating proxy in front of SearxNG,
-both bigger changes than a settings tweak. Every discovery feature built on
-search (company/investor/marketing discovery, brand mention scanning) degrades
-gracefully to an empty list when this happens — no error, just nothing
-found — which is correct behavior for the provider abstraction but can look
-identical to "the feature is broken" from the outside. If a discovery
-feature returns suspiciously empty results, check SearxNG's own
-`unresponsive_engines` before assuming the bug is in this repo's code.
+**The search provider is now Tavily, not SearxNG — because SearxNG's
+blocking turned out to be structural, not transient.**
+`gruvle-reach-searxng.onrender.com` (still deployed, still free) is the
+`SearchProvider` used when `SEARCH_PROVIDER=searxng`, but its upstream
+engines rate-limit or CAPTCHA-block cloud/datacenter IPs independently of
+anything in this repo. Confirmed live via `GET /search?q=...&format=json`:
+tried the default 4 engines, then widened to 7 plus a longer per-engine
+timeout (`infra/searxng/settings.yml`) — every single one still failed
+(rate-limited, CAPTCHA-blocked, timed out, or protocol-incompatible). This
+is the broader trend of search engines fingerprinting and blocking known
+cloud-hosting IP ranges, not fixable by picking a different scraping-based
+engine. **Fixed by switching to `app/providers/search/tavily_provider.py`**
+— a real authenticated API (`TAVILY_API_KEY`, both in `.env` and on the
+Render API service), not scraped HTML, so it doesn't hit this at all;
+verified live producing real discovered companies with real source URLs.
+`SEARCH_PROVIDER=searxng`/`rss`/`manual` still work in code (the provider
+abstraction didn't change, just the active choice) — if a discovery
+feature ever returns suspiciously empty results again, check which
+provider is actually configured before assuming the bug is in this repo's
+agent code.
 
 ## Conventions this codebase actually follows
 

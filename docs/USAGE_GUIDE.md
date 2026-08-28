@@ -89,8 +89,8 @@ that wasn't actually found). Discovered companies get scored against the
 ICP (`icp_fit_score`, `icp_fit_category`) and move through a pipeline:
 `prospect → qualified → drafted → approved → sent → replied → meeting → won`.
 
-**Integration needed:** a `SEARCH_PROVIDER` on top of the AI provider — SearxNG (self-hosted, free, default) or RSS/manual sources.
-**Status:** ⚠️ the pipeline itself is verified live (product understanding → query derivation → fetch → extract → score all ran without error), but this specific run found **zero companies** — traced to the production SearxNG instance's upstream engines (Brave, Google CSE, Startpage, DuckDuckGo) all currently rate-limited or CAPTCHA-blocked, confirmed directly against SearxNG's own `/search` endpoint. Not a code defect; see `CLAUDE.md`.
+**Integration needed:** a `SEARCH_PROVIDER` on top of the AI provider — Tavily (real authenticated API, active by default) or self-hosted SearxNG/RSS/manual sources.
+**Status:** ✅ verified live end to end, including real search results — the first run against production SearxNG returned zero companies (every upstream engine was rate-limited or CAPTCHA-blocked from Render's IP, see `CLAUDE.md`), fixed by switching to Tavily; a rerun found real companies with real source URLs.
 
 ### 3. Investor discovery + matching
 **UI:** Investors tab.
@@ -104,9 +104,8 @@ alongside sector_fit/recent_activity/portfolio_relevance sub-scores — not
 just a number, an auditable breakdown.
 
 **Integration needed:** AI + search providers, same as customer discovery.
-**Status:** ✅ manual-directory matching verified live with real scoring.
-⚠️ autonomous discovery ran cleanly but (same as above) found nothing this
-run, due to the SearxNG issue.
+**Status:** ✅ manual-directory matching verified live with real scoring;
+autonomous discovery verified live post-Tavily-switch (see §2).
 
 ### 4. Opportunities (launch, community, marketing)
 **UI:** Opportunities tab.
@@ -202,9 +201,9 @@ category (positive/neutral/negative/question/purchase_intent/
 competitor_comparison/feedback) with a relevance score and a recommended
 action.
 **Integration needed:** AI + search.
-**Status:** ⚠️ ran cleanly, returned zero mentions — expected, since
-"Gruvle Radar" is a synthetic test product with no real web presence, and
-independently affected by the current SearxNG issue (§2).
+**Status:** ✅ ran cleanly; returned zero mentions on the original run,
+expected since "Gruvle Radar" is a synthetic test product with no real web
+presence to be mentioned yet — not a search issue (see §2).
 
 ### 9. Campaigns
 **UI:** Campaigns tab → new campaign → "Generate content".
@@ -364,7 +363,7 @@ sequenceDiagram
 | To unlock… | You need | Free option | Where |
 |---|---|---|---|
 | Product understanding, ICP, all content/draft generation, scoring narratives | An `AI_PROVIDER` | Ollama (local) or Groq (cloud free tier) | `.env` → `AI_PROVIDER`, `OLLAMA_*` / `GROQ_API_KEY` |
-| All autonomous discovery (customers, investors, marketing, brand mentions) | A `SEARCH_PROVIDER` | Self-hosted SearxNG | `.env` → `SEARCH_PROVIDER`, `SEARXNG_BASE_URL` |
+| All autonomous discovery (customers, investors, marketing, brand mentions) | A `SEARCH_PROVIDER` | Tavily free tier (active by default) or self-hosted SearxNG | `.env` → `SEARCH_PROVIDER`, `TAVILY_API_KEY` |
 | Sending outreach email | An `EMAIL_PROVIDER` | Resend free tier or your own SMTP | `.env` → `EMAIL_PROVIDER`, `RESEND_API_KEY` / `SMTP_*` |
 | Auto-publishing content instead of copy-paste | A social provider's client ID/secret, then a connected access token per workspace | None are free-tier-friendly (each requires a registered developer app) | `.env` → `{PROVIDER}_CLIENT_ID/SECRET`, then `POST /integrations/{provider}/connect` |
 | Turning a Visibility finding into a real pull request | A GitHub fine-grained PAT (repo contents + PRs) | Free (your own GitHub account) | `POST /integrations/github/connect` with `{"credential_payload": {"pat": "..."}}` |
