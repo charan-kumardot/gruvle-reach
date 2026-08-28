@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.enums import EvidenceStatus
@@ -43,3 +44,21 @@ def record_evidence(
     db.add(row)
     db.flush()
     return row
+
+
+def recent_evidence_exists(db: Session, *, workspace_id: uuid.UUID, source_url: str, max_age_days: int = 7) -> bool:
+    """Research memory (§23): skip re-fetching a URL this workspace already
+    has recent evidence for, rather than re-researching the same thing on
+    every discovery run. Scoped per-workspace (matching Evidence's own
+    scoping) — a global cross-workspace cache is a further extension."""
+    if not source_url:
+        return False
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+    existing = db.execute(
+        select(Evidence.id).where(
+            Evidence.workspace_id == workspace_id,
+            Evidence.source_url == source_url,
+            Evidence.retrieved_at >= cutoff,
+        )
+    ).scalar_one_or_none()
+    return existing is not None

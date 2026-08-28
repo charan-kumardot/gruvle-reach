@@ -86,3 +86,92 @@ def discover_companies_task(workspace_id: str, product_id: str, queries: list[st
         return len(companies)
     finally:
         db.close()
+
+
+@celery_app.task
+def discover_customers_for_all_products() -> int:
+    """§22 daily autonomous customer discovery — zero-input, derives its own
+    queries per product via the research orchestrator."""
+    from app.agents.research_orchestrator import run_autonomous_discovery
+    from app.providers.search.factory import get_search_provider
+
+    db: Session = SessionLocal()
+    count = 0
+    try:
+        products = db.execute(select(Product)).scalars().all()
+        ai_provider = get_ai_provider()
+        search_provider = get_search_provider()
+        for product in products:
+            try:
+                run_autonomous_discovery(
+                    db, workspace_id=product.workspace_id, product=product,
+                    ai_provider=ai_provider, search_provider=search_provider,
+                )
+                count += 1
+            except Exception:  # noqa: BLE001 — one product's failure shouldn't stop the rest
+                db.rollback()
+                continue
+        db.commit()
+    finally:
+        db.close()
+    return count
+
+
+@celery_app.task
+def discover_investors_for_all_products() -> int:
+    """§22 daily autonomous investor discovery."""
+    from app.agents.investor_discovery_agent import InvestorDiscoveryAgent
+    from app.db.models.product import ProductProfile
+    from app.providers.search.factory import get_search_provider
+
+    db: Session = SessionLocal()
+    total = 0
+    try:
+        products = db.execute(select(Product)).scalars().all()
+        ai_provider = get_ai_provider()
+        search_provider = get_search_provider()
+        for product in products:
+            profile = db.execute(
+                select(ProductProfile).where(ProductProfile.product_id == product.id).order_by(ProductProfile.created_at.desc())
+            ).scalars().first()
+            agent = InvestorDiscoveryAgent(db, ai_provider, search_provider)
+            try:
+                discovered = agent.discover_investors(workspace_id=product.workspace_id, product=product, profile=profile)
+                total += len(discovered)
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return total
+
+
+@celery_app.task
+def discover_marketing_opportunities_for_all_products() -> int:
+    """§22 weekly autonomous marketing-opportunity discovery."""
+    from app.agents.marketing_discovery_agent import MarketingDiscoveryAgent
+    from app.db.models.product import ProductProfile
+    from app.providers.search.factory import get_search_provider
+
+    db: Session = SessionLocal()
+    total = 0
+    try:
+        products = db.execute(select(Product)).scalars().all()
+        ai_provider = get_ai_provider()
+        search_provider = get_search_provider()
+        for product in products:
+            profile = db.execute(
+                select(ProductProfile).where(ProductProfile.product_id == product.id).order_by(ProductProfile.created_at.desc())
+            ).scalars().first()
+            agent = MarketingDiscoveryAgent(db, ai_provider, search_provider)
+            try:
+                discovered = agent.discover_opportunities(workspace_id=product.workspace_id, product=product, profile=profile)
+                total += len(discovered)
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                continue
+    finally:
+        db.close()
+    return total

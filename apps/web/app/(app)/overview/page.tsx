@@ -1,18 +1,21 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Sparkles, TrendingUp, Users, Landmark, Radio } from "lucide-react";
-import { api } from "@/lib/api-client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Sparkles, TrendingUp, Users, Landmark, Radio, Lightbulb } from "lucide-react";
+import { toast } from "sonner";
+import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
-import type { ActionItem, BrandMention, Company, DashboardAnalytics, InvestorMatch, Investor } from "@/lib/types";
+import type { ActionItem, BrandMention, Company, DashboardAnalytics, InvestorMatch, Investor, LearningInsight } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/app/empty-state";
 import { ActionCard } from "@/components/app/action-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScoreBadge } from "@/components/app/score-badge";
 
 export default function OverviewPage() {
   const { workspace, product } = useAppStore();
+  const queryClient = useQueryClient();
   const wsId = workspace?.id;
   const productId = product?.id;
 
@@ -49,6 +52,30 @@ export default function OverviewPage() {
     queryKey: ["brand-mentions", wsId],
     queryFn: () => api.get<BrandMention[]>(`/workspaces/${wsId}/brand/mentions`),
     enabled: !!wsId,
+  });
+
+  const { data: learningInsights } = useQuery({
+    queryKey: ["learning-insights", wsId, "pending"],
+    queryFn: () => api.get<LearningInsight[]>(`/workspaces/${wsId}/learning-insights?status=pending`),
+    enabled: !!wsId,
+  });
+
+  const acceptInsight = useMutation({
+    mutationFn: (id: string) => api.post<LearningInsight>(`/workspaces/${wsId}/learning-insights/${id}/accept`),
+    onSuccess: () => {
+      toast.success("Insight accepted");
+      queryClient.invalidateQueries({ queryKey: ["learning-insights"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to accept insight"),
+  });
+
+  const ignoreInsight = useMutation({
+    mutationFn: (id: string) => api.post<LearningInsight>(`/workspaces/${wsId}/learning-insights/${id}/ignore`),
+    onSuccess: () => {
+      toast.success("Insight ignored");
+      queryClient.invalidateQueries({ queryKey: ["learning-insights"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to ignore insight"),
   });
 
   if (!product) {
@@ -146,6 +173,32 @@ export default function OverviewPage() {
               )}
             </CardContent>
           </Card>
+
+          {learningInsights && learningInsights.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Lightbulb className="h-3.5 w-3.5" /> What Reach learned</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 pt-0">
+                {learningInsights.slice(0, 3).map((insight) => (
+                  <div key={insight.id} className="rounded-[var(--radius-sm)] bg-[var(--border-subtle)] px-2.5 py-2">
+                    <p className="text-xs">{insight.hypothesis}</p>
+                    <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                      Based on {insight.sample_size} data points · {Math.round(insight.confidence * 100)}% confidence
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => acceptInsight.mutate(insight.id)} disabled={acceptInsight.isPending}>
+                        Accept
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => ignoreInsight.mutate(insight.id)} disabled={ignoreInsight.isPending}>
+                        Ignore
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

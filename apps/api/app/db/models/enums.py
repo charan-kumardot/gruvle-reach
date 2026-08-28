@@ -64,6 +64,16 @@ class OpportunityType(str, enum.Enum):
     PARTNERSHIP = "partnership"
     MEDIA = "media"
     EVENT = "event"
+    SEO = "seo"
+    GEO = "geo"
+    AI_VISIBILITY = "ai_visibility"
+    COMPETITOR = "competitor"
+    SOCIAL = "social"
+    GRANT = "grant"
+    ACCELERATOR = "accelerator"
+    PODCAST = "podcast"
+    NEWSLETTER = "newsletter"
+    OTHER = "other"
 
 
 class ActionStatus(str, enum.Enum):
@@ -190,3 +200,12 @@ class WebsiteOpportunityStatus(str, enum.Enum):
 class VisibilityCoverageStatus(str, enum.Enum):
     MENTIONED = "mentioned"
     NOT_DETECTED = "not_detected"
+
+
+# ---- Autonomous growth engine -------------------------------------------
+
+
+class LearningInsightStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    IGNORED = "ignored"

@@ -7,12 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.agents.icp_agent import ICPAgent
 from app.agents.product_understanding_agent import ProductUnderstandingAgent
+from app.agents.research_orchestrator import run_autonomous_discovery
 from app.core.audit import record_audit
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.enums import ICPStatus, OrgRole
 from app.db.models.product import ICPProfile, Product, ProductProfile
 from app.db.session import get_db
 from app.providers.ai.factory import get_ai_provider
+from app.providers.search.factory import get_search_provider
+from app.schemas.growth import ResearchRunResponse
 from app.schemas.product import (
     ICPProfileResponse,
     ICPUpdateRequest,
@@ -199,3 +202,30 @@ def update_icp(
     db.commit()
     db.refresh(icp)
     return icp
+
+
+@router.post("/{product_id}/autonomous-discovery", response_model=ResearchRunResponse)
+def autonomous_discovery(
+    product_id: uuid.UUID,
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Zero-input discovery (§6, §8): no search query required — derives
+    everything from the product itself (reusing/creating product
+    understanding + ICP as needed) and discovers candidate companies."""
+    product = db.get(Product, product_id)
+    if product is None or product.workspace_id != ctx.workspace_id:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    run = run_autonomous_discovery(
+        db, workspace_id=ctx.workspace_id, product=product,
+        ai_provider=get_ai_provider(), search_provider=get_search_provider(),
+    )
+    record_audit(
+        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
+        action="autonomous_discovery_run", resource_type="research_run", resource_id=str(run.id),
+        metadata={"status": run.status},
+    )
+    db.commit()
+    db.refresh(run)
+    return run

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Package, Plus, Sparkles, Wand2 } from "lucide-react";
+import { Package, Plus, Rocket, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
-import type { ICPProfile, Product, ProductProfile } from "@/lib/types";
+import type { ICPProfile, Product, ProductProfile, ResearchRun } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -141,6 +141,22 @@ function ProductCard({ product, selected, onSelect }: { product: Product; select
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "ICP generation failed"),
   });
 
+  const runDiscovery = useMutation({
+    mutationFn: () => api.post<ResearchRun>(`/workspaces/${workspace!.id}/products/${product.id}/autonomous-discovery`),
+    onSuccess: (run) => {
+      const summary = run.result_summary as { companies_found?: number; triggers_found?: number };
+      toast.success(
+        run.status === "completed"
+          ? `Discovery complete — ${summary.companies_found ?? 0} companies, ${summary.triggers_found ?? 0} triggers found`
+          : `Discovery ${run.status}${run.error ? `: ${run.error}` : ""}`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["product-profile", product.id] });
+      queryClient.invalidateQueries({ queryKey: ["icps", product.id] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Autonomous discovery failed"),
+  });
+
   return (
     <Card className={selected ? "ring-2 ring-[var(--ring)]" : ""} onClick={onSelect}>
       <CardHeader>
@@ -194,6 +210,16 @@ function ProductCard({ product, selected, onSelect }: { product: Product; select
             disabled={generateIcp.isPending}
           >
             <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {generateIcp.isPending ? "Generating…" : "Generate ICP"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              runDiscovery.mutate();
+            }}
+            disabled={runDiscovery.isPending}
+          >
+            <Rocket className="mr-1.5 h-3.5 w-3.5" /> {runDiscovery.isPending ? "Running…" : "Run Autonomous Discovery"}
           </Button>
         </div>
       </CardContent>

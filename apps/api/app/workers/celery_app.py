@@ -29,6 +29,19 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.generate_weekly_market_briefs",
         "schedule": crontab(day_of_week=1, hour=6, minute=30),
     },
+    # §22 autonomous discovery — scan/recommend only, never sends/publishes.
+    "autonomous-customer-discovery": {
+        "task": "app.workers.tasks.discover_customers_for_all_products",
+        "schedule": crontab(hour=5, minute=0),
+    },
+    "autonomous-investor-discovery": {
+        "task": "app.workers.tasks.discover_investors_for_all_products",
+        "schedule": crontab(hour=5, minute=30),
+    },
+    "weekly-marketing-discovery": {
+        "task": "app.workers.tasks.discover_marketing_opportunities_for_all_products",
+        "schedule": crontab(day_of_week=3, hour=6, minute=0),
+    },
 }
 
 celery_app.autodiscover_tasks(["app.workers"])

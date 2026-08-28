@@ -19,7 +19,7 @@ from app.db.models.company import Company, CompanySignal
 from app.db.models.enums import EvidenceStatus
 from app.providers.ai.base import AIProvider
 from app.providers.search.base import SearchProvider
-from app.research.evidence import record_evidence
+from app.research.evidence import record_evidence, recent_evidence_exists
 from app.research.extractors import extract_signals, strip_html
 from app.research.fetcher import SSRFBlockedError, safe_fetch
 
@@ -68,6 +68,11 @@ class ResearchAgent(BaseAgent):
                 if not result.url or result.url in seen_websites:
                     continue
                 seen_websites.add(result.url)
+
+                # Research memory (§23) — don't re-research a URL this
+                # workspace already has recent evidence for.
+                if recent_evidence_exists(self.db, workspace_id=workspace_id, source_url=result.url):
+                    continue
 
                 try:
                     fetched = safe_fetch(result.url)

@@ -6,7 +6,10 @@ export type PipelineStage =
   | "prospect" | "qualified" | "drafted" | "approved" | "sent" | "replied" | "meeting" | "won" | "lost" | "not_now";
 export type InvestorStage =
   | "discovered" | "researching" | "shortlisted" | "contacted" | "replied" | "meeting" | "follow_up" | "due_diligence" | "passed" | "invested";
-export type OpportunityType = "customer" | "investor" | "marketing" | "launch" | "community" | "content" | "partnership" | "media" | "event";
+export type OpportunityType =
+  | "customer" | "investor" | "marketing" | "launch" | "community" | "content" | "partnership" | "media" | "event"
+  | "seo" | "geo" | "ai_visibility" | "competitor" | "social" | "grant" | "accelerator" | "podcast" | "newsletter" | "other";
+export type LearningInsightStatus = "pending" | "accepted" | "ignored";
 export type ActionStatus = "today" | "upcoming" | "waiting" | "completed" | "snoozed";
 export type ActionCategory = "customer" | "investor" | "marketing" | "content" | "competitor" | "launch" | "visibility";
 export type ContentStatus = "idea" | "draft" | "approved" | "published";
@@ -411,6 +414,29 @@ export interface BrandBrain {
   proof_points: string[];
   founder_story: string;
   product_facts: string[];
+}
+
+export interface LearningInsight {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  dimension: string;
+  hypothesis: string;
+  sample_size: number;
+  result_summary: { group?: string; group_rate?: number; baseline_rate?: number; lift?: number; total_sample_size?: number };
+  confidence: number;
+  status: LearningInsightStatus;
+}
+
+export interface ResearchRun {
+  id: string;
+  workspace_id: string;
+  product_id: string | null;
+  run_type: string;
+  status: string;
+  query: string;
+  result_summary: Record<string, unknown>;
+  error: string;
 }
 
 export interface IntegrationCatalogEntry {

@@ -7,12 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.investor_agent import InvestorAgent
+from app.agents.investor_discovery_agent import InvestorDiscoveryAgent
+from app.core.audit import record_audit
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.enums import OrgRole
 from app.db.models.investor import Investor, InvestorInteraction, InvestorMatch
-from app.db.models.product import Product
+from app.db.models.product import Product, ProductProfile
 from app.db.session import get_db
 from app.providers.ai.factory import get_ai_provider
+from app.providers.search.factory import get_search_provider
 from app.schemas.investor import (
     InvestorCreateRequest,
     InvestorInteractionResponse,
@@ -123,3 +126,32 @@ def upsert_pipeline_entry(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+@router.post("/workspaces/{workspace_id}/products/{product_id}/discover-investors", response_model=list[InvestorResponse])
+def discover_investors(
+    product_id: uuid.UUID,
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Autonomous investor discovery (§12-15) — no query required, derives
+    search terms from the product's own category/stage."""
+    product = db.get(Product, product_id)
+    if product is None or product.workspace_id != ctx.workspace_id:
+        raise HTTPException(status_code=404, detail="Product not found")
+    profile = db.execute(
+        select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
+    ).scalars().first()
+
+    agent = InvestorDiscoveryAgent(db, get_ai_provider(), get_search_provider())
+    discovered = agent.discover_investors(workspace_id=ctx.workspace_id, product=product, profile=profile)
+
+    record_audit(
+        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
+        action="investor_discovery_run", resource_type="product", resource_id=str(product_id),
+        metadata={"discovered_count": len(discovered)},
+    )
+    db.commit()
+    for inv in discovered:
+        db.refresh(inv)
+    return discovered

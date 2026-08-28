@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Landmark } from "lucide-react";
+import { Landmark, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
@@ -41,6 +41,16 @@ export default function InvestorsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Matching failed"),
   });
 
+  const discoverInvestors = useMutation({
+    mutationFn: () =>
+      api.post<Investor[]>(`/workspaces/${workspace!.id}/products/${product!.id}/discover-investors`),
+    onSuccess: (found) => {
+      toast.success(found.length > 0 ? `Discovered ${found.length} new investors` : "No new investors found this run");
+      queryClient.invalidateQueries({ queryKey: ["investors-directory"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Investor discovery failed"),
+  });
+
   if (!product) {
     return <EmptyState icon={Landmark} title="Select a product" description="Choose a product to see investor matches." />;
   }
@@ -54,9 +64,19 @@ export default function InvestorsPage() {
         title="Investors"
         description={`${investors?.length ?? 0} investors in the directory — scored against ${product.name}.`}
         action={
-          <Button size="sm" onClick={() => computeMatches.mutate()} disabled={computeMatches.isPending}>
-            {computeMatches.isPending ? "Matching…" : "Compute matches"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => discoverInvestors.mutate()}
+              disabled={discoverInvestors.isPending}
+            >
+              <Search className="mr-1.5 h-3.5 w-3.5" /> {discoverInvestors.isPending ? "Discovering…" : "Discover Investors"}
+            </Button>
+            <Button size="sm" onClick={() => computeMatches.mutate()} disabled={computeMatches.isPending}>
+              {computeMatches.isPending ? "Matching…" : "Compute matches"}
+            </Button>
+          </div>
         }
       />
 
