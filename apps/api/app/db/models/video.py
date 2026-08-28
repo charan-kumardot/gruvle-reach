@@ -25,6 +25,12 @@ class VideoBrandKit(Base, UUIDPKMixin, TimestampMixin):
     text_color: Mapped[str] = mapped_column(String(7), default="#F8FAFC")
     font_family: Mapped[str] = mapped_column(String(100), default="Inter")
     logo_url: Mapped[str] = mapped_column(String(500), default="")
+    # A founder-supplied screenshot of the real product, composited into a
+    # premium browser-window mockup for the product/solution scenes
+    # (scene_renderer.py) — the reliable, always-accurate alternative to
+    # AI-generated or web-searched imagery (see app/providers/image/
+    # factory.py for why neither of those is the default).
+    product_screenshot_url: Mapped[str] = mapped_column(String(500), default="")
 
 
 class Video(Base, UUIDPKMixin, TimestampMixin):

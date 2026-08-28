@@ -42,6 +42,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+async function upload<T>(path: string, file: File): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  // No Content-Type here — the browser sets multipart/form-data with the
+  // correct boundary itself; setting it manually breaks the upload.
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const resp = await fetch(`${API_BASE_URL}/api/v1${path}`, { method: "POST", headers, body: formData });
+  const isJson = resp.headers.get("content-type")?.includes("application/json");
+  const body = isJson ? await resp.json() : await resp.text();
+  if (!resp.ok) {
+    const message = typeof body === "object" && body?.detail ? JSON.stringify(body.detail) : String(body);
+    throw new ApiError(resp.status, message || `Request failed with status ${resp.status}`);
+  }
+  return body as T;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) =>
@@ -51,4 +70,5 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload,
 };

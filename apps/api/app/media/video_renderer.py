@@ -19,6 +19,7 @@ from app.agents.video_agent import Scene
 from app.db.models.video import VideoBrandKit
 from app.media.scene_renderer import render_scene_animation, render_transition_frames
 from app.media.tts import synthesize_voiceover
+from app.providers.image.factory import get_image_provider
 
 logger = logging.getLogger(__name__)
 
@@ -49,25 +50,46 @@ def render_video(scenes: list[Scene], *, brand_kit: VideoBrandKit | None, aspect
     workdir = Path(tempfile.mkdtemp(prefix="gruvle_video_"))
     log_lines: list[str] = []
     try:
-        # Build the full frame timeline: each scene's zoom animation, with
-        # a short crossfade spliced in between consecutive scenes.
-        timeline: list[tuple] = []  # (PIL.Image, duration_seconds)
-        scene_animations = [render_scene_animation(scene, brand_kit, aspect_ratio) for scene in scenes]
-        for i, animation in enumerate(scene_animations):
-            timeline.extend(animation)
-            if i < len(scene_animations) - 1:
-                transition = render_transition_frames(animation[-1][0], scene_animations[i + 1][0][0])
-                timeline.extend(transition)
-
+        # Stream every frame straight to disk as it's generated — a 6-scene
+        # video can have 150-240 full-resolution animation frames, and
+        # holding them all as PIL Images at once (the previous approach)
+        # was very likely OOM-killing the background render thread on
+        # Render's memory-constrained free tier. At most two frames (the
+        # previous scene's last frame + the current scene's first, for the
+        # crossfade between them) are ever held in memory simultaneously.
         frame_paths: list[Path] = []
-        for idx, (image, _duration) in enumerate(timeline):
-            frame_path = workdir / f"frame_{idx:04d}.png"
+        frame_durations: list[float] = []
+        prev_scene_last_frame = None
+        frame_idx = 0
+
+        def _save_frame(image) -> None:
+            nonlocal frame_idx
+            frame_path = workdir / f"frame_{frame_idx:04d}.png"
             image.save(frame_path, format="PNG")
             frame_paths.append(frame_path)
+            frame_idx += 1
+
+        image_provider = get_image_provider()
+        for scene in scenes:
+            is_first_frame_of_scene = True
+            last_frame_of_scene = None
+            for image, duration in render_scene_animation(scene, brand_kit, aspect_ratio, image_provider):
+                if is_first_frame_of_scene and prev_scene_last_frame is not None:
+                    for t_image, t_duration in render_transition_frames(prev_scene_last_frame, image):
+                        _save_frame(t_image)
+                        frame_durations.append(t_duration)
+                is_first_frame_of_scene = False
+                _save_frame(image)
+                frame_durations.append(duration)
+                last_frame_of_scene = image
+            prev_scene_last_frame = last_frame_of_scene
+
+        if not frame_paths:
+            return RenderResult(success=False, error="No frames were rendered")
 
         list_path = workdir / "concat_list.txt"
         with list_path.open("w", encoding="utf-8") as f:
-            for frame_path, (_image, duration) in zip(frame_paths, timeline):
+            for frame_path, duration in zip(frame_paths, frame_durations):
                 posix_path = frame_path.as_posix()
                 f.write(f"file '{posix_path}'\n")
                 f.write(f"duration {duration}\n")
@@ -75,7 +97,7 @@ def render_video(scenes: list[Scene], *, brand_kit: VideoBrandKit | None, aspect
             # unless the file is listed once more without a duration.
             f.write(f"file '{frame_paths[-1].as_posix()}'\n")
 
-        total_duration = sum(duration for _image, duration in timeline)
+        total_duration = sum(frame_durations)
 
         narration = " ... ".join(scene.text for scene in scenes)
         voiceover_path = workdir / "voiceover.wav"

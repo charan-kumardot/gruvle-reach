@@ -87,10 +87,14 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_storage_bucket: str = "gruvle-media"
 
-    # Video generation — free-first template pipeline is the only
-    # implementation today; the setting exists so a paid provider can be
-    # added later without touching call sites.
+    # Video generation — the template pipeline (FFmpeg Ken Burns + crossfade
+    # over a scene background) always works with zero credentials; when a
+    # Hugging Face token is present, scene backgrounds are AI-generated
+    # images instead of the procedural gradient, with a per-scene fallback
+    # to the procedural background if a generation call fails or the
+    # account's inference quota is exhausted (see app/providers/image/).
     video_provider: Literal["template"] = "template"
+    huggingface_api_token: str = ""
 
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 

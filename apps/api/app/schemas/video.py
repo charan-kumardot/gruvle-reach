@@ -13,6 +13,21 @@ class VideoGenerateRequest(BaseModel):
     aspect_ratio: str = "9:16"
 
 
+class VideoBrandKitResponse(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    product_id: uuid.UUID | None
+    primary_color: str
+    secondary_color: str
+    background_color: str
+    text_color: str
+    font_family: str
+    logo_url: str
+    product_screenshot_url: str
+
+    model_config = {"from_attributes": True}
+
+
 class VideoResponse(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID

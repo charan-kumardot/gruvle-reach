@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clapperboard, RotateCw } from "lucide-react";
+import { Clapperboard, ImageUp, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
-import type { Video } from "@/lib/types";
+import type { Video, VideoBrandKit } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -33,6 +33,22 @@ export default function VideosPage() {
     queryFn: () => api.get<Video[]>(`/workspaces/${workspace!.id}/videos`),
     enabled: !!workspace,
     refetchInterval: (query) => (query.state.data?.some((v) => v.status === "rendering") ? 4000 : false),
+  });
+
+  const { data: brandKit } = useQuery({
+    queryKey: ["video-brand-kit", workspace?.id, product?.id],
+    queryFn: () => api.get<VideoBrandKit>(`/workspaces/${workspace!.id}/videos/brand-kit?product_id=${product!.id}`),
+    enabled: !!workspace && !!product,
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadScreenshot = useMutation({
+    mutationFn: (file: File) => api.upload<VideoBrandKit>(`/workspaces/${workspace!.id}/videos/brand-kit/screenshot?product_id=${product!.id}`, file),
+    onSuccess: () => {
+      toast.success("Screenshot saved — the product/solution scenes in new videos will use it");
+      queryClient.invalidateQueries({ queryKey: ["video-brand-kit"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Upload failed"),
   });
 
   const generate = useMutation({
@@ -61,6 +77,41 @@ export default function VideosPage() {
           </Button>
         }
       />
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ImageUp className="h-3.5 w-3.5" /> Product screenshot</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+            Upload a real screenshot of {product.name}. New videos will show it in a premium browser mockup for the
+            product/solution scenes instead of an abstract background.
+          </p>
+          <div className="flex items-center gap-3">
+            {brandKit?.product_screenshot_url && (
+              <img
+                src={brandKit.product_screenshot_url}
+                alt="Product screenshot"
+                className="h-16 w-28 rounded-[var(--radius-sm)] border border-[var(--border)] object-cover"
+              />
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadScreenshot.mutate(file);
+                e.target.value = "";
+              }}
+            />
+            <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={uploadScreenshot.isPending}>
+              {uploadScreenshot.isPending ? "Uploading…" : brandKit?.product_screenshot_url ? "Replace screenshot" : "Upload screenshot"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {videos && videos.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

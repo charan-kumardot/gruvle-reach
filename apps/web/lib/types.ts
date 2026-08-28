@@ -375,6 +375,19 @@ export interface Video {
   rendered_at: string | null;
 }
 
+export interface VideoBrandKit {
+  id: string;
+  workspace_id: string;
+  product_id: string | null;
+  primary_color: string;
+  secondary_color: string;
+  background_color: string;
+  text_color: string;
+  font_family: string;
+  logo_url: string;
+  product_screenshot_url: string;
+}
+
 export interface OutreachMessage {
   id: string;
   outreach_id: string;
