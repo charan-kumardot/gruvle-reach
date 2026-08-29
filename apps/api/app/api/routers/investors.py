@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.agents.investor_agent import InvestorAgent
 from app.agents.investor_discovery_agent import InvestorDiscoveryAgent
 from app.core.audit import record_audit
+from app.core.background import run_in_background
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.enums import OrgRole
 from app.db.models.investor import Investor, InvestorInteraction, InvestorMatch
@@ -128,30 +129,44 @@ def upsert_pipeline_entry(
     return entry
 
 
-@router.post("/workspaces/{workspace_id}/products/{product_id}/discover-investors", response_model=list[InvestorResponse])
+@router.post("/workspaces/{workspace_id}/products/{product_id}/discover-investors", status_code=202)
 def discover_investors(
     product_id: uuid.UUID,
     ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
     db: Annotated[Session, Depends(get_db)],
 ):
     """Autonomous investor discovery (§12-15) — no query required, derives
-    search terms from the product's own category/stage."""
+    search terms from the product's own category/stage. Runs in a
+    background thread (see app/core/background.py) — a synchronous version
+    of this 502'd in production once the query set was broadened, exceeding
+    Render's free-tier request timeout."""
     product = db.get(Product, product_id)
     if product is None or product.workspace_id != ctx.workspace_id:
         raise HTTPException(status_code=404, detail="Product not found")
-    profile = db.execute(
-        select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
-    ).scalars().first()
 
-    agent = InvestorDiscoveryAgent(db, get_ai_provider(), get_search_provider())
-    discovered = agent.discover_investors(workspace_id=ctx.workspace_id, product=product, profile=profile)
+    workspace_id, organization_id, user_id = ctx.workspace_id, ctx.organization_id, ctx.user.id
 
-    record_audit(
-        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
-        action="investor_discovery_run", resource_type="product", resource_id=str(product_id),
-        metadata={"discovered_count": len(discovered)},
-    )
-    db.commit()
-    for inv in discovered:
-        db.refresh(inv)
-    return discovered
+    def _run() -> None:
+        from app.db.session import SessionLocal
+
+        thread_db = SessionLocal()
+        try:
+            thread_product = thread_db.get(Product, product_id)
+            profile = thread_db.execute(
+                select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
+            ).scalars().first()
+
+            agent = InvestorDiscoveryAgent(thread_db, get_ai_provider(), get_search_provider())
+            discovered = agent.discover_investors(workspace_id=workspace_id, product=thread_product, profile=profile)
+
+            record_audit(
+                thread_db, organization_id=organization_id, workspace_id=workspace_id, user_id=user_id,
+                action="investor_discovery_run", resource_type="product", resource_id=str(product_id),
+                metadata={"discovered_count": len(discovered)},
+            )
+            thread_db.commit()
+        finally:
+            thread_db.close()
+
+    run_in_background(_run, label=f"investor-discovery:{product_id}")
+    return {"status": "started"}

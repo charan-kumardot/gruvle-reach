@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from app.agents.competitor_agent import CompetitorAgent
 from app.agents.competitor_discovery_agent import CompetitorDiscoveryAgent
 from app.core.audit import record_audit
+from app.core.background import run_in_background
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.competitor import Competitor, CompetitorChange
 from app.db.models.enums import OrgRole
 from app.db.models.product import Product, ProductProfile
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.providers.ai.factory import get_ai_provider
 from app.providers.search.factory import get_search_provider
 from app.schemas.competitor import CompetitorChangeResponse, CompetitorCreateRequest, CompetitorResponse
@@ -38,7 +39,7 @@ def create_competitor(
     return competitor
 
 
-@router.post("/discover", response_model=list[CompetitorResponse])
+@router.post("/discover", status_code=202)
 def discover_competitors(
     ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
     db: Annotated[Session, Depends(get_db)],
@@ -46,26 +47,38 @@ def discover_competitors(
 ):
     """Autonomous competitor discovery — no name/URL required, derives
     search terms from the product's own category and competitive
-    categories. Safe to call repeatedly — dedupes by website and by name."""
+    categories. Safe to call repeatedly — dedupes by website and by name.
+    Runs in a background thread (see app/core/background.py) — a
+    synchronous version of this 502'd in production once the query set was
+    broadened, exceeding Render's free-tier request timeout."""
     product = db.get(Product, product_id)
     if product is None or product.workspace_id != ctx.workspace_id:
         raise HTTPException(status_code=404, detail="Product not found")
-    profile = db.execute(
-        select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
-    ).scalars().first()
 
-    agent = CompetitorDiscoveryAgent(db, get_ai_provider(), get_search_provider())
-    discovered = agent.discover_competitors(workspace_id=ctx.workspace_id, product=product, profile=profile)
+    workspace_id, organization_id, user_id = ctx.workspace_id, ctx.organization_id, ctx.user.id
 
-    record_audit(
-        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
-        action="competitor_discovery_run", resource_type="product", resource_id=str(product_id),
-        metadata={"discovered_count": len(discovered)},
-    )
-    db.commit()
-    for c in discovered:
-        db.refresh(c)
-    return discovered
+    def _run() -> None:
+        thread_db = SessionLocal()
+        try:
+            thread_product = thread_db.get(Product, product_id)
+            profile = thread_db.execute(
+                select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
+            ).scalars().first()
+
+            agent = CompetitorDiscoveryAgent(thread_db, get_ai_provider(), get_search_provider())
+            discovered = agent.discover_competitors(workspace_id=workspace_id, product=thread_product, profile=profile)
+
+            record_audit(
+                thread_db, organization_id=organization_id, workspace_id=workspace_id, user_id=user_id,
+                action="competitor_discovery_run", resource_type="product", resource_id=str(product_id),
+                metadata={"discovered_count": len(discovered)},
+            )
+            thread_db.commit()
+        finally:
+            thread_db.close()
+
+    run_in_background(_run, label=f"competitor-discovery:{product_id}")
+    return {"status": "started"}
 
 
 @router.post("/{competitor_id}/scan", response_model=CompetitorChangeResponse | None)

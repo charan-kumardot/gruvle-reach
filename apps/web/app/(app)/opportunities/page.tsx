@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
+import { usePollAfterAction } from "@/lib/hooks";
 import type { Opportunity, OpportunityType } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -50,14 +51,18 @@ export default function OpportunitiesPage() {
     enabled: !!workspace,
   });
 
+  // Runs in the background (app/core/background.py) — no synchronous
+  // result, so poll the feed for a bit until new opportunities show up.
+  const { polling, start: startPolling } = usePollAfterAction(() => queryClient.invalidateQueries({ queryKey: ["opportunities"] }));
+
   const discoverMarketing = useMutation({
     mutationFn: () =>
-      api.post<Opportunity[]>(
+      api.post<{ status: string }>(
         `/workspaces/${workspace!.id}/opportunities/discover-marketing?product_id=${product!.id}`
       ),
-    onSuccess: (found) => {
-      toast.success(found.length > 0 ? `Discovered ${found.length} new opportunities` : "No new opportunities found this run");
-      queryClient.invalidateQueries({ queryKey: ["opportunities"] });
+    onSuccess: () => {
+      toast.success("Discovery started — new opportunities will appear below over the next minute or so");
+      startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Marketing discovery failed"),
   });
@@ -70,11 +75,15 @@ export default function OpportunitiesPage() {
         action={
           product && (
             <Button size="sm" onClick={() => discoverMarketing.mutate()} disabled={discoverMarketing.isPending}>
-              {discoverMarketing.isPending ? "Discovering…" : "Discover Marketing Opportunities"}
+              {discoverMarketing.isPending ? "Starting…" : "Discover Marketing Opportunities"}
             </Button>
           )
         }
       />
+
+      {polling && (
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new opportunities…</p>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {TYPES.map((t) => (

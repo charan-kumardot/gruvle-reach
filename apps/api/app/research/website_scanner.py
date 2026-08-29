@@ -130,13 +130,21 @@ def scan_website(url: str) -> dict:
 
     all_links = soup.find_all("a", href=True)
     internal_links, external_links = [], []
+    internal_seen: set[str] = set()
     for a in all_links:
         href = a["href"]
         if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
             continue
         absolute = urljoin(final_url or url, href)
+        # Strip the fragment — "/#pricing" is an in-page anchor on the same
+        # document, not a distinct page, and scanning it separately just
+        # triples up identical "missing OG/structured-data" noise for what
+        # a founder would see as one page.
+        absolute = absolute.split("#", 1)[0]
         if urlparse(absolute).netloc == parsed_final.netloc:
-            internal_links.append(absolute)
+            if absolute not in internal_seen:
+                internal_seen.add(absolute)
+                internal_links.append(absolute)
         else:
             external_links.append(absolute)
     result["internal_link_count"] = _field(len(internal_links), ConfidenceLabel.VERIFIED)

@@ -9,11 +9,12 @@ from app.agents.research_agent import ResearchAgent
 from app.agents.research_orchestrator import derive_queries, ensure_profile_and_icps
 from app.agents.trigger_agent import TriggerAgent
 from app.core.audit import record_audit
+from app.core.background import run_in_background
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.company import Company, CompanySignal, CompanyTrigger, Contact
 from app.db.models.enums import OrgRole
 from app.db.models.product import ICPProfile, Product
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.providers.ai.factory import get_ai_provider
 from app.providers.search.factory import get_search_provider
 from app.schemas.company import (
@@ -41,7 +42,27 @@ def list_companies(
     return db.execute(stmt.order_by(Company.icp_fit_score.desc())).scalars().all()
 
 
-@router.post("/discover", response_model=list[CompanyResponse])
+def _discover_companies_in_background(*, workspace_id: uuid.UUID, product_id: uuid.UUID, queries: list[str], max_results_per_query: int) -> None:
+    """Runs on its own thread with its own DB session — see app/core/background.py.
+    Long-running (many search+fetch+AI-classification calls); a synchronous
+    version of this 502'd in production once the query set was broadened,
+    exceeding Render's free-tier request timeout."""
+    thread_db = SessionLocal()
+    try:
+        agent = ResearchAgent(thread_db, get_ai_provider(), get_search_provider())
+        companies = agent.discover_companies(
+            workspace_id=workspace_id, product_id=product_id, queries=queries, max_results_per_query=max_results_per_query,
+        )
+        trigger_agent = TriggerAgent(thread_db)
+        for company in companies:
+            signals = thread_db.execute(select(CompanySignal).where(CompanySignal.company_id == company.id)).scalars().all()
+            trigger_agent.detect_triggers(company, signals)
+        thread_db.commit()
+    finally:
+        thread_db.close()
+
+
+@router.post("/discover", status_code=202)
 def discover_companies(
     payload: CompanyDiscoverRequest,
     ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
@@ -60,26 +81,16 @@ def discover_companies(
     if not queries:
         raise HTTPException(status_code=400, detail="Provide at least one search query or a valid icp_id")
 
-    agent = ResearchAgent(db, get_ai_provider(), get_search_provider())
-    companies = agent.discover_companies(
-        workspace_id=ctx.workspace_id,
-        product_id=product_id,
-        queries=queries,
-        max_results_per_query=payload.max_results_per_query,
+    run_in_background(
+        lambda: _discover_companies_in_background(
+            workspace_id=ctx.workspace_id, product_id=product_id, queries=queries, max_results_per_query=payload.max_results_per_query,
+        ),
+        label=f"company-discovery:{product_id}",
     )
-
-    trigger_agent = TriggerAgent(db)
-    for company in companies:
-        signals = db.execute(select(CompanySignal).where(CompanySignal.company_id == company.id)).scalars().all()
-        trigger_agent.detect_triggers(company, signals)
-
-    db.commit()
-    for c in companies:
-        db.refresh(c)
-    return companies
+    return {"status": "started"}
 
 
-@router.post("/discover-auto", response_model=list[CompanyResponse])
+@router.post("/discover-auto", status_code=202)
 def discover_companies_auto(
     ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
     db: Annotated[Session, Depends(get_db)],
@@ -95,30 +106,37 @@ def discover_companies_auto(
     if product is None or product.workspace_id != ctx.workspace_id:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    ai_provider = get_ai_provider()
-    profile, icps = ensure_profile_and_icps(db, product=product, ai_provider=ai_provider)
-    queries = derive_queries(product, profile, icps)
-    if not queries:
-        raise HTTPException(status_code=503, detail="Could not derive any research queries — AI provider may be unavailable")
+    workspace_id, organization_id, user_id = ctx.workspace_id, ctx.organization_id, ctx.user.id
 
-    agent = ResearchAgent(db, ai_provider, get_search_provider())
-    companies = agent.discover_companies(workspace_id=ctx.workspace_id, product_id=product_id, queries=queries)
+    def _run() -> None:
+        thread_db = SessionLocal()
+        try:
+            thread_product = thread_db.get(Product, product_id)
+            ai_provider = get_ai_provider()
+            profile, icps = ensure_profile_and_icps(thread_db, product=thread_product, ai_provider=ai_provider)
+            queries = derive_queries(thread_product, profile, icps)
+            if not queries:
+                return
 
-    trigger_agent = TriggerAgent(db)
-    for company in companies:
-        signals = db.execute(select(CompanySignal).where(CompanySignal.company_id == company.id)).scalars().all()
-        trigger_agent.detect_triggers(company, signals)
+            agent = ResearchAgent(thread_db, ai_provider, get_search_provider())
+            companies = agent.discover_companies(workspace_id=workspace_id, product_id=product_id, queries=queries)
 
-    record_audit(
-        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
-        action="company_discovery_run", resource_type="product", resource_id=str(product_id),
-        metadata={"discovered_count": len(companies), "queries_used": len(queries)},
-    )
+            trigger_agent = TriggerAgent(thread_db)
+            for company in companies:
+                signals = thread_db.execute(select(CompanySignal).where(CompanySignal.company_id == company.id)).scalars().all()
+                trigger_agent.detect_triggers(company, signals)
 
-    db.commit()
-    for c in companies:
-        db.refresh(c)
-    return companies
+            record_audit(
+                thread_db, organization_id=organization_id, workspace_id=workspace_id, user_id=user_id,
+                action="company_discovery_run", resource_type="product", resource_id=str(product_id),
+                metadata={"discovered_count": len(companies), "queries_used": len(queries)},
+            )
+            thread_db.commit()
+        finally:
+            thread_db.close()
+
+    run_in_background(_run, label=f"company-discovery-auto:{product_id}")
+    return {"status": "started"}
 
 
 @router.get("/{company_id}", response_model=CompanyResponse)

@@ -6,6 +6,7 @@ import { Landmark, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
+import { usePollAfterAction } from "@/lib/hooks";
 import type { Investor, InvestorMatch } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -41,12 +42,16 @@ export default function InvestorsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Matching failed"),
   });
 
+  // Runs in the background (app/core/background.py) — no synchronous
+  // result, so poll the directory for a bit until new investors show up.
+  const { polling, start: startPolling } = usePollAfterAction(() => queryClient.invalidateQueries({ queryKey: ["investors-directory"] }));
+
   const discoverInvestors = useMutation({
     mutationFn: () =>
-      api.post<Investor[]>(`/workspaces/${workspace!.id}/products/${product!.id}/discover-investors`),
-    onSuccess: (found) => {
-      toast.success(found.length > 0 ? `Discovered ${found.length} new investors` : "No new investors found this run");
-      queryClient.invalidateQueries({ queryKey: ["investors-directory"] });
+      api.post<{ status: string }>(`/workspaces/${workspace!.id}/products/${product!.id}/discover-investors`),
+    onSuccess: () => {
+      toast.success("Discovery started — new investors will appear in the directory over the next minute or so, then click Compute matches");
+      startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Investor discovery failed"),
   });
@@ -71,7 +76,7 @@ export default function InvestorsPage() {
               onClick={() => discoverInvestors.mutate()}
               disabled={discoverInvestors.isPending}
             >
-              <Search className="mr-1.5 h-3.5 w-3.5" /> {discoverInvestors.isPending ? "Discovering…" : "Discover Investors"}
+              <Search className="mr-1.5 h-3.5 w-3.5" /> {discoverInvestors.isPending ? "Starting…" : "Discover Investors"}
             </Button>
             <Button size="sm" onClick={() => computeMatches.mutate()} disabled={computeMatches.isPending}>
               {computeMatches.isPending ? "Matching…" : "Compute matches"}
@@ -79,6 +84,10 @@ export default function InvestorsPage() {
           </div>
         }
       />
+
+      {polling && (
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new investors…</p>
+      )}
 
       {sortedMatches.length > 0 ? (
         <div className="flex flex-col gap-3">

@@ -6,6 +6,7 @@ import { Swords, Plus, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
+import { usePollAfterAction } from "@/lib/hooks";
 import type { Competitor, CompetitorChange } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -41,11 +42,15 @@ export default function CompetitorsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to add competitor"),
   });
 
+  // Runs in the background (app/core/background.py) — no synchronous
+  // result, so poll the list for a bit until new competitors show up.
+  const { polling, start: startPolling } = usePollAfterAction(() => queryClient.invalidateQueries({ queryKey: ["competitors"] }));
+
   const discover = useMutation({
-    mutationFn: () => api.post<Competitor[]>(`/workspaces/${workspace!.id}/competitors/discover?product_id=${product?.id}`),
-    onSuccess: (found) => {
-      toast.success(found.length > 0 ? `Discovered ${found.length} new competitor${found.length === 1 ? "" : "s"}` : "No new competitors found this run");
-      queryClient.invalidateQueries({ queryKey: ["competitors"] });
+    mutationFn: () => api.post<{ status: string }>(`/workspaces/${workspace!.id}/competitors/discover?product_id=${product?.id}`),
+    onSuccess: () => {
+      toast.success("Discovery started — new competitors will appear below over the next minute or so");
+      startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Competitor discovery failed"),
   });
@@ -63,11 +68,15 @@ export default function CompetitorsPage() {
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Add competitor</Button>
             <Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>
-              <Search className="mr-1.5 h-4 w-4" /> {discover.isPending ? "Discovering…" : "Discover competitors"}
+              <Search className="mr-1.5 h-4 w-4" /> {discover.isPending ? "Starting…" : "Discover competitors"}
             </Button>
           </div>
         }
       />
+
+      {polling && (
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new competitors…</p>
+      )}
 
       {competitors && competitors.length > 0 ? (
         <div className="flex flex-col gap-3">
@@ -76,7 +85,7 @@ export default function CompetitorsPage() {
           ))}
         </div>
       ) : (
-        <EmptyState icon={Swords} title="No competitors tracked yet" description="Discover competitors automatically from your product's category, or add one you already know by name." action={<Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>{discover.isPending ? "Discovering…" : "Discover competitors"}</Button>} />
+        <EmptyState icon={Swords} title="No competitors tracked yet" description="Discover competitors automatically from your product's category, or add one you already know by name." action={<Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>{discover.isPending ? "Starting…" : "Discover competitors"}</Button>} />
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>

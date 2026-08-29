@@ -6,6 +6,7 @@ import { Users, Search, Zap, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
+import { usePollAfterAction } from "@/lib/hooks";
 import type { Company, CompanyTrigger } from "@/lib/types";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
@@ -30,14 +31,18 @@ export default function CustomersPage() {
     enabled: !!workspace && !!product,
   });
 
+  const { polling, start: startPolling } = usePollAfterAction(() => queryClient.invalidateQueries({ queryKey: ["companies"] }));
+
   // Zero-input discovery: derives a broad set of queries from the product's
   // own ICPs (industries x company-size tiers, no geography bias) — this is
   // the primary action. Safe to click repeatedly; discovery dedupes by URL.
+  // Runs in the background (app/core/background.py) — no synchronous result,
+  // so poll the companies list for a bit until it shows up.
   const discoverAuto = useMutation({
-    mutationFn: () => api.post<Company[]>(`/workspaces/${workspace!.id}/companies/discover-auto?product_id=${product!.id}`),
-    onSuccess: (found) => {
-      toast.success(found.length > 0 ? `Discovered ${found.length} new candidate compan${found.length === 1 ? "y" : "ies"}` : "No new companies found this run — try again later or add a custom search");
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    mutationFn: () => api.post<{ status: string }>(`/workspaces/${workspace!.id}/companies/discover-auto?product_id=${product!.id}`),
+    onSuccess: () => {
+      toast.success("Discovery started — new companies will appear below over the next minute or so");
+      startPolling();
     },
     onError: (err) =>
       toast.error(err instanceof ApiError ? err.message : "Discovery failed — check your SEARCH_PROVIDER config"),
@@ -45,15 +50,15 @@ export default function CustomersPage() {
 
   const discover = useMutation({
     mutationFn: () =>
-      api.post<Company[]>(`/workspaces/${workspace!.id}/companies/discover?product_id=${product!.id}`, {
+      api.post<{ status: string }>(`/workspaces/${workspace!.id}/companies/discover?product_id=${product!.id}`, {
         queries: [query],
         max_results_per_query: 15,
       }),
-    onSuccess: (found) => {
-      toast.success(`Discovered ${found.length} candidate compan${found.length === 1 ? "y" : "ies"}`);
+    onSuccess: () => {
+      toast.success("Search started — matching companies will appear below over the next minute or so");
       setDiscoverOpen(false);
       setQuery("");
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      startPolling();
     },
     onError: (err) =>
       toast.error(err instanceof ApiError ? err.message : "Discovery failed — check your SEARCH_PROVIDER config"),
@@ -74,11 +79,15 @@ export default function CustomersPage() {
               Custom search
             </Button>
             <Button size="sm" onClick={() => discoverAuto.mutate()} disabled={discoverAuto.isPending}>
-              <Search className="mr-1.5 h-4 w-4" /> {discoverAuto.isPending ? "Discovering…" : "Discover companies"}
+              <Search className="mr-1.5 h-4 w-4" /> {discoverAuto.isPending ? "Starting…" : "Discover companies"}
             </Button>
           </div>
         }
       />
+
+      {polling && (
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new results…</p>
+      )}
 
       <div className="mb-4 flex items-center gap-2">
         {[0, 60, 75, 90].map((s) => (
@@ -101,7 +110,7 @@ export default function CustomersPage() {
           icon={Users}
           title="No target accounts yet"
           description="Run discovery to find real candidate companies with evidence — no query needed, it derives search terms from your product's own ICPs."
-          action={<Button size="sm" onClick={() => discoverAuto.mutate()} disabled={discoverAuto.isPending}>{discoverAuto.isPending ? "Discovering…" : "Discover companies"}</Button>}
+          action={<Button size="sm" onClick={() => discoverAuto.mutate()} disabled={discoverAuto.isPending}>{discoverAuto.isPending ? "Starting…" : "Discover companies"}</Button>}
         />
       )}
 

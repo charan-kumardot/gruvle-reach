@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api-client";
 import { useAppStore } from "./store";
@@ -54,4 +54,27 @@ export function useBootstrap() {
   }, [products, productsFetched, product, setProduct]);
 
   return { organization, workspace, product, products: products ?? [], ready };
+}
+
+/** Discovery/scan endpoints now return immediately and do the real work in
+ * a background thread (see app/core/background.py — a synchronous version
+ * used to time out on Render's free tier once queries got broad enough).
+ * There's no synchronous result to show, so poll the relevant list query
+ * for a bit after starting so results appear without a manual refresh. */
+export function usePollAfterAction(invalidate: () => void, durationMs = 75_000) {
+  const [polling, setPolling] = useState(false);
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
+
+  useEffect(() => {
+    if (!polling) return;
+    const interval = setInterval(() => invalidateRef.current(), 5000);
+    const timeout = setTimeout(() => setPolling(false), durationMs);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [polling, durationMs]);
+
+  return { polling, start: () => setPolling(true) };
 }
