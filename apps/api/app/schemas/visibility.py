@@ -25,6 +25,15 @@ class WebsiteCreateRequest(BaseModel):
     framework: str = ""
 
 
+class WebsiteUpdateRequest(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    repository_owner: str | None = None
+    repository_name: str | None = None
+    default_branch: str | None = None
+    deployment_platform: str | None = None
+
+
 class WebsiteResponse(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID

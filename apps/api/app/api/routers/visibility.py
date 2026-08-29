@@ -62,6 +62,7 @@ from app.schemas.visibility import (
     WebsiteOpportunityResponse,
     WebsiteResponse,
     WebsiteScanResponse,
+    WebsiteUpdateRequest,
 )
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["visibility"])
@@ -122,6 +123,30 @@ def create_website(
 @router.get("/websites/{website_id}", response_model=WebsiteResponse)
 def get_website(website_id: uuid.UUID, ctx: Annotated[WorkspaceContext, Depends(require_workspace_member)], db: Annotated[Session, Depends(get_db)]):
     return _get_website(db, ctx.workspace_id, website_id)
+
+
+@router.patch("/websites/{website_id}", response_model=WebsiteResponse)
+def update_website(
+    website_id: uuid.UUID,
+    payload: WebsiteUpdateRequest,
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Fixing a typo'd URL (or a domain change) shouldn't mean losing every
+    scan/SEO-issue/opportunity/change tied to this website by deleting and
+    re-creating it — this was the only way to correct it before."""
+    website = _get_website(db, ctx.workspace_id, website_id)
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        if value is not None:
+            setattr(website, field, value)
+    if "url" in updates and updates["url"]:
+        framework, confidence = detect_framework(website.url)
+        website.framework = framework
+        website.framework_confidence = confidence
+    db.commit()
+    db.refresh(website)
+    return website
 
 
 @router.delete("/websites/{website_id}", status_code=204)

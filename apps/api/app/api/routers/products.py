@@ -5,18 +5,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.brand_setup_agent import BrandSetupAgent
 from app.agents.icp_agent import ICPAgent
 from app.agents.product_understanding_agent import ProductUnderstandingAgent
 from app.agents.research_orchestrator import run_autonomous_discovery
 from app.core.audit import record_audit
 from app.core.deps import WorkspaceContext, require_workspace_member, require_workspace_role
 from app.db.models.enums import ICPStatus, OrgRole
-from app.db.models.product import ICPProfile, Product, ProductProfile
+from app.db.models.product import BrandBrain, ICPProfile, Product, ProductProfile
+from app.db.models.visibility import ProductTruth
 from app.db.session import get_db
 from app.providers.ai.factory import get_ai_provider
 from app.providers.search.factory import get_search_provider
 from app.schemas.growth import ResearchRunResponse
 from app.schemas.product import (
+    BrandSetupResponse,
     ICPProfileResponse,
     ICPUpdateRequest,
     ProductCreateRequest,
@@ -174,6 +177,77 @@ def generate_icp(
     for icp in created:
         db.refresh(icp)
     return created
+
+
+@router.post("/{product_id}/brand-setup/generate", response_model=BrandSetupResponse)
+def generate_brand_setup(
+    product_id: uuid.UUID,
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Drafts BrandBrain + ProductTruth from the product's own founder-
+    written description — without this, a founder has to hand-write ~19
+    text fields across two separate settings screens (with zero AI help)
+    before content generation or the quality gate's fabrication checks have
+    any real grounding. Immediately upserts both (same pattern as ICP
+    generation above) — the founder reviews/edits the draft afterward
+    rather than approving it first, since these are internal grounding
+    settings, not externally-published content."""
+    product = db.get(Product, product_id)
+    if product is None or product.workspace_id != ctx.workspace_id:
+        raise HTTPException(status_code=404, detail="Product not found")
+    profile = db.execute(
+        select(ProductProfile).where(ProductProfile.product_id == product_id).order_by(ProductProfile.created_at.desc())
+    ).scalars().first()
+
+    agent = BrandSetupAgent(db, get_ai_provider())
+    output = agent.generate(product, profile)
+    if output is None or "brand_brain" not in output or "product_truth" not in output:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI provider unavailable or returned an unparseable response.")
+
+    bb_data = output["brand_brain"]
+    brand = db.execute(
+        select(BrandBrain).where(BrandBrain.workspace_id == ctx.workspace_id, BrandBrain.product_id == product_id)
+    ).scalars().first()
+    if brand is None:
+        brand = BrandBrain(workspace_id=ctx.workspace_id, product_id=product_id)
+        db.add(brand)
+    brand.voice = bb_data.get("voice", "")
+    brand.tone = bb_data.get("tone", "")
+    brand.positioning = bb_data.get("positioning", "")
+    brand.key_messages = bb_data.get("key_messages", [])
+    brand.words_to_use = bb_data.get("words_to_use", [])
+    brand.words_to_avoid = bb_data.get("words_to_avoid", [])
+    brand.claims = bb_data.get("claims", [])
+    brand.proof_points = bb_data.get("proof_points", [])
+    # Never overwrite a founder-written story with an AI-generated blank —
+    # the agent is instructed to leave this empty since it can't know it.
+    brand.founder_story = bb_data.get("founder_story") or brand.founder_story
+
+    pt_data = output["product_truth"]
+    truth = db.execute(select(ProductTruth).where(ProductTruth.product_id == product_id)).scalars().first()
+    if truth is None:
+        truth = ProductTruth(product_id=product_id)
+        db.add(truth)
+    truth.definition = pt_data.get("definition", "")
+    truth.target_customer = pt_data.get("target_customer", "")
+    truth.problem = pt_data.get("problem", "")
+    truth.solution = pt_data.get("solution", "")
+    truth.core_features = pt_data.get("core_features", [])
+    truth.positioning = pt_data.get("positioning", "")
+    truth.approved_claims = pt_data.get("approved_claims", [])
+    truth.forbidden_claims = pt_data.get("forbidden_claims", [])
+    truth.brand_voice = pt_data.get("brand_voice", "")
+
+    record_audit(
+        db, organization_id=ctx.organization_id, workspace_id=ctx.workspace_id, user_id=ctx.user.id,
+        action="brand_setup_generated", resource_type="product", resource_id=str(product_id),
+    )
+
+    db.commit()
+    db.refresh(brand)
+    db.refresh(truth)
+    return BrandSetupResponse(brand_brain=brand, product_truth=truth)
 
 
 @router.get("/{product_id}/icp", response_model=list[ICPProfileResponse])

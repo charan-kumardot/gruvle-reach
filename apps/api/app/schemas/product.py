@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, Field
 
 from app.db.models.enums import ICPStatus
+from app.schemas.visibility import ProductTruthResponse
 
 
 class ProductCreateRequest(BaseModel):
@@ -114,3 +115,8 @@ class BrandBrainResponse(BrandBrainRequest):
     product_id: uuid.UUID | None
 
     model_config = {"from_attributes": True}
+
+
+class BrandSetupResponse(BaseModel):
+    brand_brain: BrandBrainResponse
+    product_truth: ProductTruthResponse

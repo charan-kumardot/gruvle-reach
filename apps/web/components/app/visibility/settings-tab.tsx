@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
@@ -87,6 +87,15 @@ export function SettingsTab({ website }: { website: Website }) {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to save"),
   });
 
+  const generate = useMutation({
+    mutationFn: () => api.post(`/workspaces/${workspace!.id}/products/${website.product_id}/brand-setup/generate`),
+    onSuccess: () => {
+      toast.success("Drafted Product Truth (and your Brand Kit, on the Brand page) — review and edit below.");
+      queryClient.invalidateQueries({ queryKey: ["product-truth", website.product_id] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Generation failed — check your AI_PROVIDER config"),
+  });
+
   const toggleGuardrail = useMutation({
     mutationFn: (next: WebsiteGuardrails) => api.put(`/workspaces/${workspace!.id}/websites/${website.id}/guardrails`, next),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["website-guardrails", website.id] }),
@@ -109,7 +118,14 @@ export function SettingsTab({ website }: { website: Website }) {
   return (
     <div className="flex flex-col gap-6">
       <Card>
-        <CardHeader><CardTitle>Product Truth</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle>Product Truth</CardTitle>
+            <Button size="sm" variant="secondary" onClick={() => generate.mutate()} disabled={generate.isPending}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {generate.isPending ? "Drafting…" : truth ? "Regenerate with AI" : "Generate with AI"}
+            </Button>
+          </div>
+        </CardHeader>
         <CardContent className="flex flex-col gap-3 pt-0">
           <p className="text-xs text-[var(--muted-foreground)]">
             Every proposed change is checked against this — AI can never introduce a claim that isn&apos;t supported here.
