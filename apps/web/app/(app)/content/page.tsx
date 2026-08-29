@@ -85,7 +85,16 @@ export default function ContentPage() {
   const planToday = useMutation({
     mutationFn: () => api.post<ContentItem[]>(`/workspaces/${workspace!.id}/content/plan-today`, { product_id: product?.id }),
     onSuccess: (items) => {
-      toast.success(items.length > 0 ? `Planned ${items.length} idea${items.length === 1 ? "" : "s"} for today` : "No new ideas today — try again once there's more signal");
+      const withDrafts = items.filter((i) => i.variants.length > 0).length;
+      if (items.length === 0) {
+        toast.success("No new ideas today — try again once there's more signal");
+      } else if (withDrafts === items.length) {
+        toast.success(`Planned ${items.length} idea${items.length === 1 ? "" : "s"} for today`);
+      } else if (withDrafts === 0) {
+        toast.error(`Planned ${items.length} idea${items.length === 1 ? "" : "s"}, but draft generation failed for all of them — your AI provider may be rate-limited. They'll show up with 0 variants; try Plan Today again shortly.`);
+      } else {
+        toast.warning(`Planned ${items.length} ideas — drafts generated for ${withDrafts}, the rest failed and need a retry.`);
+      }
       invalidateAll();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Daily planning failed"),

@@ -149,10 +149,26 @@ function CampaignDetailDialog({ campaign, onClose }: { campaign: Campaign | null
   const generateContent = useMutation({
     mutationFn: () => api.post<ContentItem[]>(`/workspaces/${workspace!.id}/campaigns/${campaign!.id}/generate-content`, { count: 5 }),
     onSuccess: (items) => {
-      toast.success(`Generated ${items.length} campaign asset${items.length === 1 ? "" : "s"}`);
+      const withDrafts = items.filter((i) => i.variants.length > 0).length;
+      if (withDrafts === items.length) {
+        toast.success(`Generated ${items.length} campaign asset${items.length === 1 ? "" : "s"}`);
+      } else if (withDrafts === 0) {
+        toast.error(`${items.length} idea${items.length === 1 ? "" : "s"} created, but draft generation failed for all of them — your AI provider may be rate-limited. Retry below.`);
+      } else {
+        toast.warning(`${withDrafts} of ${items.length} ideas got drafts — the rest failed and can be retried below.`);
+      }
       queryClient.invalidateQueries({ queryKey: ["campaign-content", campaign?.id] });
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Content generation failed"),
+  });
+
+  const retryVariants = useMutation({
+    mutationFn: (contentId: string) => api.post<ContentItem>(`/workspaces/${workspace!.id}/content/${contentId}/generate-variants`, { channels: ["linkedin", "x"] }),
+    onSuccess: () => {
+      toast.success("Draft generated");
+      queryClient.invalidateQueries({ queryKey: ["campaign-content", campaign?.id] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Still failed — try again shortly"),
   });
 
   const activate = useMutation({
@@ -208,9 +224,22 @@ function CampaignDetailDialog({ campaign, onClose }: { campaign: Campaign | null
               <div key={item.id} className="rounded-[var(--radius-sm)] border border-[var(--border)] p-2.5">
                 <div className="mb-1 flex items-center gap-1.5">
                   <Badge variant="outline">{item.content_type}</Badge>
-                  <span className="text-xs text-[var(--muted-foreground)]">{item.variants.length} variant{item.variants.length === 1 ? "" : "s"}</span>
+                  {item.variants.length > 0 ? (
+                    <span className="text-xs text-[var(--muted-foreground)]">{item.variants.length} variant{item.variants.length === 1 ? "" : "s"}</span>
+                  ) : (
+                    <Badge variant="danger">Draft generation failed</Badge>
+                  )}
                 </div>
                 <p className="text-xs">{item.idea}</p>
+                {item.variants.length === 0 && (
+                  <Button
+                    size="sm" variant="secondary" className="mt-2"
+                    onClick={() => retryVariants.mutate(item.id)}
+                    disabled={retryVariants.isPending}
+                  >
+                    {retryVariants.isPending ? "Retrying…" : "Retry draft"}
+                  </Button>
+                )}
               </div>
             ))
           ) : (

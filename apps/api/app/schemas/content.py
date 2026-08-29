@@ -14,6 +14,10 @@ class ContentIdeaCreateRequest(BaseModel):
     content_type: str = "educational"
 
 
+class ContentRegenerateVariantsRequest(BaseModel):
+    channels: list[str] = ["linkedin", "x"]
+
+
 class ContentVariantResponse(BaseModel):
     id: uuid.UUID
     content_id: uuid.UUID

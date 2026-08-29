@@ -22,6 +22,7 @@ from app.providers.ai.factory import get_ai_provider
 from app.providers.social.factory import get_social_access_token_for_workspace, get_social_providers
 from app.schemas.content import (
     ContentIdeaCreateRequest,
+    ContentRegenerateVariantsRequest,
     ContentResponse,
     ContentVariantRejectRequest,
     ContentVariantResponse,
@@ -142,6 +143,35 @@ def generate_content(
     db.commit()
     db.refresh(content)
     _ = content.variants  # load relationship before returning
+    return content
+
+
+@router.post("/content/{content_id}/generate-variants", response_model=ContentResponse)
+def regenerate_content_variants(
+    content_id: uuid.UUID,
+    payload: ContentRegenerateVariantsRequest,
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Retry draft generation for a Content idea that ended up with zero
+    variants — daily planning and campaign generation don't hard-fail when
+    every AI provider is unavailable/rate-limited (a batch of ideas
+    shouldn't all be thrown away because one draft failed), so a founder
+    needs a way to retry the specific idea that came up empty rather than
+    starting over."""
+    content = db.get(Content, content_id)
+    if content is None or content.workspace_id != ctx.workspace_id:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    brand = get_brand(db, ctx.workspace_id, content.product_id)
+    truth = get_truth(db, content.product_id)
+    variants = generate_and_gate_variants(db, content=content, brand=brand, truth=truth, channels=payload.channels)
+    if not variants:
+        raise HTTPException(status_code=503, detail="AI provider unavailable or returned an unparseable response — try again in a moment.")
+
+    db.commit()
+    db.refresh(content)
+    _ = content.variants
     return content
 
 
