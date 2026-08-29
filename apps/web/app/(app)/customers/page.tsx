@@ -30,11 +30,24 @@ export default function CustomersPage() {
     enabled: !!workspace && !!product,
   });
 
+  // Zero-input discovery: derives a broad set of queries from the product's
+  // own ICPs (industries x company-size tiers, no geography bias) — this is
+  // the primary action. Safe to click repeatedly; discovery dedupes by URL.
+  const discoverAuto = useMutation({
+    mutationFn: () => api.post<Company[]>(`/workspaces/${workspace!.id}/companies/discover-auto?product_id=${product!.id}`),
+    onSuccess: (found) => {
+      toast.success(found.length > 0 ? `Discovered ${found.length} new candidate compan${found.length === 1 ? "y" : "ies"}` : "No new companies found this run — try again later or add a custom search");
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : "Discovery failed — check your SEARCH_PROVIDER config"),
+  });
+
   const discover = useMutation({
     mutationFn: () =>
       api.post<Company[]>(`/workspaces/${workspace!.id}/companies/discover?product_id=${product!.id}`, {
         queries: [query],
-        max_results_per_query: 5,
+        max_results_per_query: 15,
       }),
     onSuccess: (found) => {
       toast.success(`Discovered ${found.length} candidate compan${found.length === 1 ? "y" : "ies"}`);
@@ -56,9 +69,14 @@ export default function CustomersPage() {
         title="Customers"
         description="Target accounts researched and scored against your ICP."
         action={
-          <Button size="sm" onClick={() => setDiscoverOpen(true)}>
-            <Search className="mr-1.5 h-4 w-4" /> Discover companies
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setDiscoverOpen(true)}>
+              Custom search
+            </Button>
+            <Button size="sm" onClick={() => discoverAuto.mutate()} disabled={discoverAuto.isPending}>
+              <Search className="mr-1.5 h-4 w-4" /> {discoverAuto.isPending ? "Discovering…" : "Discover companies"}
+            </Button>
+          </div>
         }
       />
 
@@ -82,18 +100,19 @@ export default function CustomersPage() {
         <EmptyState
           icon={Users}
           title="No target accounts yet"
-          description="Run discovery with a search query (e.g. an ICP-derived phrase) to find real candidate companies with evidence."
-          action={<Button size="sm" onClick={() => setDiscoverOpen(true)}>Discover companies</Button>}
+          description="Run discovery to find real candidate companies with evidence — no query needed, it derives search terms from your product's own ICPs."
+          action={<Button size="sm" onClick={() => discoverAuto.mutate()} disabled={discoverAuto.isPending}>{discoverAuto.isPending ? "Discovering…" : "Discover companies"}</Button>}
         />
       )}
 
       <Dialog open={discoverOpen} onOpenChange={setDiscoverOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Discover companies</DialogTitle>
+            <DialogTitle>Custom search</DialogTitle>
             <DialogDescription>
               Searches the web via your configured search provider, fetches each result safely, and asks AI to extract
-              only what the page actually says — every company comes with a source URL and confidence level.
+              only what the page actually says — every company comes with a source URL and confidence level. Use this
+              for a specific phrase in addition to the automatic ICP-derived discovery above.
             </DialogDescription>
           </DialogHeader>
           <form

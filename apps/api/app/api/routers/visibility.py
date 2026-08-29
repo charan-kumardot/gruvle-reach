@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 import uuid
 from typing import Annotated
 
@@ -181,8 +182,22 @@ def _compute_summary_scores(raw_result: dict, issues: list) -> dict:
     def val(key: str):
         return raw_result.get(key, {}).get("value")
 
-    seo_penalty = sum({"low": 3, "medium": 7, "high": 15}.get(i.impact, 5) for i in issues)
-    seo_score = max(0, 100 - seo_penalty)
+    # Homepage issues are weighted in full; per-page issues (from sampled
+    # internal/sitemap pages — evidence prefixed "[url] ") are averaged per
+    # page instead of summed linearly, so scanning more pages doesn't
+    # mechanically crater the score just for having more of them sampled.
+    weights = {"low": 3, "medium": 7, "high": 15}
+    homepage_issues = [i for i in issues if not i.evidence.startswith("[")]
+    page_issues = [i for i in issues if i.evidence.startswith("[")]
+
+    homepage_penalty = sum(weights.get(i.impact, 5) for i in homepage_issues)
+    per_page_penalty: dict[str, int] = {}
+    for i in page_issues:
+        page_url = i.evidence.split("]", 1)[0].lstrip("[")
+        per_page_penalty[page_url] = per_page_penalty.get(page_url, 0) + weights.get(i.impact, 5)
+    avg_page_penalty = round(sum(per_page_penalty.values()) / len(per_page_penalty)) if per_page_penalty else 0
+
+    seo_score = max(0, 100 - homepage_penalty - avg_page_penalty)
 
     technical_score = 100
     if not val("https"):
@@ -226,7 +241,13 @@ def _sync_website_opportunities(db: Session, ctx: WorkspaceContext, website: Web
     for issue in issues:
         if issue.impact not in ("medium", "high"):
             continue
-        title = f"Fix: {issue.issue_type.replace('_', ' ')}"
+        # Per-page issues (from sampled internal/sitemap pages) prefix their
+        # evidence with "[url] " — fold that into the title so each page's
+        # issue gets its own opportunity instead of colliding on a single
+        # generic "Fix: missing title" title.
+        page_match = re.match(r"^\[(.+?)\]\s*", issue.evidence)
+        base_title = f"Fix: {issue.issue_type.replace('_', ' ')}"
+        title = f"{base_title} ({page_match.group(1)})" if page_match else base_title
         if title in existing_titles:
             continue
 
@@ -244,6 +265,7 @@ def _sync_website_opportunities(db: Session, ctx: WorkspaceContext, website: Web
                 impact=issue.impact, confidence=issue.confidence, status=WebsiteOpportunityStatus.OPEN,
             )
         )
+        existing_titles.add(title)
 
 
 @router.get("/websites/{website_id}/scans", response_model=list[WebsiteScanResponse])
@@ -298,6 +320,14 @@ def run_geo_scan(
     )
     headings = latest_scan_row.raw_result.get("headings", {}).get("value", {})
     page_text += " " + " ".join(h for level in headings.values() for h in level)
+
+    # Also fold in title/meta/headings from sampled internal/sitemap pages —
+    # otherwise GEO coverage is blind to answers that live on /pricing,
+    # /faq, etc. rather than the homepage.
+    for page in latest_scan_row.raw_result.get("sampled_pages", {}).get("value", []):
+        page_text += " " + str(page.get("title") or "") + " " + str(page.get("meta_description") or "")
+        page_headings = page.get("headings") or {}
+        page_text += " " + " ".join(h for level in page_headings.values() for h in level)
 
     coverage = agent.check_coverage(questions=[q["question"] for q in questions], page_text=page_text, workspace_id=ctx.workspace_id)
     coverage_by_question = {c.get("question"): c for c in coverage}

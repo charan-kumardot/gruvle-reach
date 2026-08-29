@@ -16,12 +16,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const CAMPAIGN_CHANNELS = ["linkedin", "x", "instagram", "facebook", "reddit", "email"];
+
 export default function CampaignsPage() {
   const { workspace, product } = useAppStore();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", goal: "", audience_description: "" });
+  const [channels, setChannels] = useState<string[]>(["linkedin", "x"]);
+
+  const toggleChannel = (channel: string) => {
+    setChannels((prev) => (prev.includes(channel) ? prev.filter((c) => c !== channel) : [...prev, channel]));
+  };
 
   const { data: campaigns } = useQuery({
     queryKey: ["campaigns", workspace?.id],
@@ -30,11 +37,12 @@ export default function CampaignsPage() {
   });
 
   const create = useMutation({
-    mutationFn: () => api.post<Campaign>(`/workspaces/${workspace!.id}/campaigns`, { ...form, product_id: product?.id, channels: [] }),
+    mutationFn: () => api.post<Campaign>(`/workspaces/${workspace!.id}/campaigns`, { ...form, product_id: product?.id, channels }),
     onSuccess: () => {
       toast.success("Campaign created");
       setOpen(false);
       setForm({ name: "", goal: "", audience_description: "" });
+      setChannels(["linkedin", "x"]);
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to create campaign"),
@@ -93,7 +101,23 @@ export default function CampaignsPage() {
               <Label>Audience</Label>
               <Textarea value={form.audience_description} onChange={(e) => setForm({ ...form, audience_description: e.target.value })} placeholder="B2B SaaS companies" />
             </div>
-            <Button type="submit" disabled={create.isPending}>{create.isPending ? "Creating…" : "Create campaign"}</Button>
+            <div className="flex flex-col gap-1.5">
+              <Label>Channels</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {CAMPAIGN_CHANNELS.map((c) => (
+                  <Button
+                    key={c}
+                    type="button"
+                    size="sm"
+                    variant={channels.includes(c) ? "default" : "secondary"}
+                    onClick={() => toggleChannel(c)}
+                  >
+                    {c}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <Button type="submit" disabled={create.isPending || channels.length === 0}>{create.isPending ? "Creating…" : "Create campaign"}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -128,7 +152,7 @@ function CampaignDetailDialog({ campaign, onClose }: { campaign: Campaign | null
       toast.success(`Generated ${items.length} campaign asset${items.length === 1 ? "" : "s"}`);
       queryClient.invalidateQueries({ queryKey: ["campaign-content", campaign?.id] });
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Requires the admin role, or generation failed"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Content generation failed"),
   });
 
   const activate = useMutation({

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Swords, Plus, RefreshCw } from "lucide-react";
+import { Swords, Plus, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api-client";
 import { useAppStore } from "@/lib/store";
@@ -41,6 +41,15 @@ export default function CompetitorsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to add competitor"),
   });
 
+  const discover = useMutation({
+    mutationFn: () => api.post<Competitor[]>(`/workspaces/${workspace!.id}/competitors/discover?product_id=${product?.id}`),
+    onSuccess: (found) => {
+      toast.success(found.length > 0 ? `Discovered ${found.length} new competitor${found.length === 1 ? "" : "s"}` : "No new competitors found this run");
+      queryClient.invalidateQueries({ queryKey: ["competitors"] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Competitor discovery failed"),
+  });
+
   if (!product) {
     return <EmptyState icon={Swords} title="Select a product" description="Choose a product to track competitors." />;
   }
@@ -50,7 +59,14 @@ export default function CompetitorsPage() {
       <PageHeader
         title="Competitors"
         description="Public page changes, tracked and summarized."
-        action={<Button size="sm" onClick={() => setOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Add competitor</Button>}
+        action={
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Add competitor</Button>
+            <Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>
+              <Search className="mr-1.5 h-4 w-4" /> {discover.isPending ? "Discovering…" : "Discover competitors"}
+            </Button>
+          </div>
+        }
       />
 
       {competitors && competitors.length > 0 ? (
@@ -60,7 +76,7 @@ export default function CompetitorsPage() {
           ))}
         </div>
       ) : (
-        <EmptyState icon={Swords} title="No competitors tracked yet" description="Add a competitor's website to start watching for public changes." action={<Button size="sm" onClick={() => setOpen(true)}>Add competitor</Button>} />
+        <EmptyState icon={Swords} title="No competitors tracked yet" description="Discover competitors automatically from your product's category, or add one you already know by name." action={<Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>{discover.isPending ? "Discovering…" : "Discover competitors"}</Button>} />
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>

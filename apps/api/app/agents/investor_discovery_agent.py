@@ -43,14 +43,24 @@ def _default_investor_queries(product: Product, profile: ProductProfile | None) 
     # Biased toward phrasing that surfaces a fund's own site (portfolio/thesis
     # pages) rather than news articles ABOUT a funding round — the latter
     # dominate generic "investors in X" searches and are never themselves
-    # investor pages, so the AI correctly (and should) reject them.
+    # investor pages, so the AI correctly (and should) reject them. Spans
+    # every investor_type the schema recognizes (vc/angel/accelerator/
+    # corporate_vc/government/grant), not just traditional VC, and no
+    # geography is hardcoded so results stay global by default.
     category = (profile.product_category if profile else product.category) or "startup"
     queries = [
         f'venture capital fund "we invest in" {category}',
         f"seed stage venture capital firm portfolio {category}",
+        f"angel investor network {category} startups",
+        f"startup accelerator program {category}",
+        f"corporate venture capital arm investing in {category}",
+        f"government grant program for {category} startups",
+        f"early stage fund thesis {category}",
+        f"growth equity fund portfolio {category}",
     ]
     if product.stage:
         queries.append(f"{product.stage} stage venture capital firm thesis {category}")
+        queries.append(f"investors focused on {product.stage} stage {category} companies")
     return queries
 
 
@@ -70,7 +80,7 @@ class InvestorDiscoveryAgent(BaseAgent):
         product: Product,
         profile: ProductProfile | None,
         queries: list[str] | None = None,
-        max_results_per_query: int = 5,
+        max_results_per_query: int = 15,
     ) -> list[Investor]:
         queries = queries or _default_investor_queries(product, profile)
         discovered: list[Investor] = []

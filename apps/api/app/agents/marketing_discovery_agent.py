@@ -45,6 +45,12 @@ def _default_marketing_queries(product: Product, profile: ProductProfile | None)
         f"{category} community founders",
         f"best podcasts about {category}",
         f"startup launch platforms directories",
+        f"startup accelerator apply {category}",
+        f"grant program for {category} startups",
+        f"tech media outlet pitch {category} startups",
+        f"industry conference or event {category} 2026",
+        f"{category} slack or discord community join",
+        f"submit startup for press coverage {category}",
     ]
 
 
@@ -68,8 +74,13 @@ material, set is_content_opportunity to false."""
 
 def _default_content_trend_queries(product: Product, profile: ProductProfile | None) -> list[str]:
     category = (profile.product_category if profile else product.category) or "startup"
-    queries = [f"{category} industry trends", f"{category} news"]
-    for competitor in (product.competitors or [])[:2]:
+    queries = [
+        f"{category} industry trends",
+        f"{category} news",
+        f"{category} market report",
+        f"future of {category}",
+    ]
+    for competitor in (product.competitors or [])[:4]:
         queries.append(f"{competitor} announcement OR launch OR pricing update")
     return queries
 
@@ -90,7 +101,7 @@ class MarketingDiscoveryAgent(BaseAgent):
         product: Product,
         profile: ProductProfile | None,
         queries: list[str] | None = None,
-        max_results_per_query: int = 5,
+        max_results_per_query: int = 15,
     ) -> list[Opportunity]:
         queries = queries or _default_marketing_queries(product, profile)
         discovered: list[Opportunity] = []
@@ -159,7 +170,7 @@ class MarketingDiscoveryAgent(BaseAgent):
         product: Product,
         profile: ProductProfile | None,
         queries: list[str] | None = None,
-        max_results_per_query: int = 5,
+        max_results_per_query: int = 15,
     ) -> list[Opportunity]:
         """§2, §6-7 — the spec's MarketingIntelligenceAgent: discovers trend
         and reactive-competitive content opportunities, feeding

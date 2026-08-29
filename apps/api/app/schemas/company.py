@@ -34,7 +34,7 @@ class CompanyResponse(BaseModel):
 class CompanyDiscoverRequest(BaseModel):
     icp_id: uuid.UUID | None = None
     queries: list[str] = []
-    max_results_per_query: int = 5
+    max_results_per_query: int = 15
 
 
 class CompanyUpdateRequest(BaseModel):

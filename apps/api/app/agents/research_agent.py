@@ -57,7 +57,7 @@ class ResearchAgent(BaseAgent):
         workspace_id: uuid.UUID,
         product_id: uuid.UUID,
         queries: list[str],
-        max_results_per_query: int = 5,
+        max_results_per_query: int = 15,
     ) -> list[Company]:
         discovered: list[Company] = []
         seen_websites: set[str] = set()

@@ -42,6 +42,32 @@ def _safe_get_text(url: str, max_bytes: int = 1_500_000) -> tuple[str | None, st
     return result.text, result.final_url, latency_ms
 
 
+def _extract_seo_fields(soup: BeautifulSoup, url: str) -> dict:
+    """Pure per-page SEO field extraction, shared between the homepage scan
+    and the sampled-internal-page pass below — a real multi-page site's SEO
+    problems (missing meta on /pricing, no H1 on /features, etc.) are
+    otherwise invisible if only the homepage is ever inspected."""
+    title_tag = soup.find("title")
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    headings = {level: [h.get_text(strip=True) for h in soup.find_all(level)] for level in ("h1", "h2", "h3")}
+    images = soup.find_all("img")
+    missing_alt = [img.get("src", "") for img in images if not img.get("alt", "").strip()]
+    structured_data = [s.string for s in soup.find_all("script", attrs={"type": "application/ld+json"}) if s.string]
+    og_tags = {m.get("property", ""): m.get("content", "") for m in soup.find_all("meta", property=re.compile(r"^og:"))}
+
+    return {
+        "url": url,
+        "title": title_tag.get_text(strip=True) if title_tag else None,
+        "meta_description": meta_desc.get("content", "").strip() if meta_desc else None,
+        "headings": headings,
+        "h1_count": len(headings["h1"]),
+        "image_count": len(images),
+        "images_missing_alt": len(missing_alt),
+        "structured_data_present": len(structured_data) > 0,
+        "open_graph_present": len(og_tags) > 0,
+    }
+
+
 def scan_website(url: str) -> dict:
     result: dict[str, dict] = {}
 
@@ -116,14 +142,22 @@ def scan_website(url: str) -> dict:
     result["internal_link_count"] = _field(len(internal_links), ConfidenceLabel.VERIFIED)
     result["external_link_count"] = _field(len(external_links), ConfidenceLabel.VERIFIED)
 
-    # Sample a handful of internal links to check for broken links (404s).
-    # This is a SAMPLE, not exhaustive — always ESTIMATED, never claimed complete.
+    # Sample a handful of internal links to check for broken links (404s),
+    # and — for any that resolve — run the same SEO field extraction used on
+    # the homepage, so a real multi-page site's issues (missing meta on
+    # /pricing, no H1 on /features, etc.) don't stay invisible. SAMPLE, not
+    # exhaustive — always ESTIMATED, never claimed complete.
     broken = []
+    sampled_pages: list[dict] = []
+    sampled_urls_seen: set[str] = set()
     for link in internal_links[:MAX_SAMPLED_LINKS]:
         try:
-            sub = safe_fetch(link, max_bytes=50_000)
+            sub = safe_fetch(link, max_bytes=500_000)
             if sub.status_code >= 400:
                 broken.append({"url": link, "status": sub.status_code})
+            elif link not in sampled_urls_seen:
+                sampled_urls_seen.add(link)
+                sampled_pages.append(_extract_seo_fields(BeautifulSoup(sub.text, "html.parser"), link))
         except (SSRFBlockedError, Exception):
             continue
     result["broken_links_sample"] = _field(broken, ConfidenceLabel.ESTIMATED)
@@ -147,13 +181,19 @@ def scan_website(url: str) -> dict:
             page_html, _, _ = _safe_get_text(sm_url, max_bytes=800_000)
             if not page_html:
                 continue
-            page_title_tag = BeautifulSoup(page_html, "html.parser").find("title")
+            page_soup = BeautifulSoup(page_html, "html.parser")
+            page_title_tag = page_soup.find("title")
             page_title = page_title_tag.get_text(strip=True) if page_title_tag else ""
             if page_title:
                 titles_seen.setdefault(page_title, []).append(sm_url)
+            if sm_url not in sampled_urls_seen:
+                sampled_urls_seen.add(sm_url)
+                sampled_pages.append(_extract_seo_fields(page_soup, sm_url))
         duplicates = {t: urls for t, urls in titles_seen.items() if len(urls) > 1}
         result["duplicate_titles_sample"] = _field(duplicates, ConfidenceLabel.ESTIMATED)
         result["sitemap_sampled_url_count"] = _field(len(sitemap_urls), ConfidenceLabel.VERIFIED)
+
+    result["sampled_pages"] = _field(sampled_pages, ConfidenceLabel.ESTIMATED)
 
     result["page_speed_lighthouse_score"] = _field(None, ConfidenceLabel.UNKNOWN)
     result["duplicate_content_full_site"] = _field(None, ConfidenceLabel.UNKNOWN)

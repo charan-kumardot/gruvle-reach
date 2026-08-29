@@ -93,12 +93,17 @@ def update_campaign(
 def generate_campaign_content(
     campaign_id: uuid.UUID,
     payload: CampaignGenerateContentRequest,
-    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.ADMIN))],
+    ctx: Annotated[WorkspaceContext, Depends(require_workspace_role(OrgRole.MEMBER))],
     db: Annotated[Session, Depends(get_db)],
 ):
     campaign = _get_campaign_or_404(db, campaign_id, ctx.workspace_id)
     brand = get_brand(db, ctx.workspace_id, campaign.product_id)
     truth = get_truth(db, campaign.product_id)
+
+    campaign_channels = db.execute(
+        select(CampaignChannel.channel).where(CampaignChannel.campaign_id == campaign_id)
+    ).scalars().all()
+    channels = list(campaign_channels) or ["linkedin", "x"]
 
     ideas = plan_campaign_content(db, campaign=campaign, brand=brand, count=payload.count)
     created: list[Content] = []
@@ -109,7 +114,7 @@ def generate_campaign_content(
         )
         db.add(content)
         db.flush()
-        generate_and_gate_variants(db, content=content, brand=brand, truth=truth, channels=["linkedin", "x"], cta_hint=idea["cta_hint"])
+        generate_and_gate_variants(db, content=content, brand=brand, truth=truth, channels=channels, cta_hint=idea["cta_hint"])
         created.append(content)
 
     record_audit(
