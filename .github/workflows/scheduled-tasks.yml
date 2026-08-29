@@ -13,7 +13,23 @@ name: Scheduled tasks
 # cron-job.org) at the same secured endpoint instead — no code change needed.
 
 on:
-  workflow_dispatch: {} # manual "Run workflow" button, for testing
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Job to trigger manually"
+        required: true
+        type: choice
+        options:
+          - daily-founder-brief
+          - competitor-scan
+          - weekly-market-brief
+          - autonomous-customer-discovery
+          - autonomous-investor-discovery
+          - weekly-marketing-discovery
+          - daily-content-planning
+          - content-quality-sweep
+          - publish-due-content
+          - weekly-content-learning
   schedule:
     - cron: "0 5 * * *"    # autonomous-customer-discovery   — 05:00 UTC daily
     - cron: "30 5 * * *"   # autonomous-investor-discovery   — 05:30 UTC daily
@@ -36,23 +52,23 @@ jobs:
       - name: Determine job from trigger
         id: job
         run: |
-          case "${{ github.event.schedule }}" in
-            "0 5 * * *")    echo "name=autonomous-customer-discovery" >> "$GITHUB_OUTPUT" ;;
-            "30 5 * * *")   echo "name=autonomous-investor-discovery" >> "$GITHUB_OUTPUT" ;;
-            "0 6 * * *")    echo "name=competitor-scan" >> "$GITHUB_OUTPUT" ;;
-            "30 6 * * 1")   echo "name=weekly-market-brief" >> "$GITHUB_OUTPUT" ;;
-            "0 6 * * 3")    echo "name=weekly-marketing-discovery" >> "$GITHUB_OUTPUT" ;;
-            "0 6 * * 5")    echo "name=weekly-content-learning" >> "$GITHUB_OUTPUT" ;;
-            "0 7 * * *")    echo "name=daily-founder-brief" >> "$GITHUB_OUTPUT" ;;
-            "0 8 * * *")    echo "name=daily-content-planning" >> "$GITHUB_OUTPUT" ;;
-            "0 * * * *")    echo "name=content-quality-sweep" >> "$GITHUB_OUTPUT" ;;
-            "*/15 * * * *") echo "name=publish-due-content" >> "$GITHUB_OUTPUT" ;;
-            *)              echo "name=" >> "$GITHUB_OUTPUT" ;;
-          esac
-
-      - name: Manual dispatch job selection
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "Manual run — pass a job via workflow_dispatch inputs if you add one, or trigger all jobs by re-running this step per job name."
+          if [ -n "${{ github.event.inputs.job }}" ]; then
+            echo "name=${{ github.event.inputs.job }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              "0 5 * * *")    echo "name=autonomous-customer-discovery" >> "$GITHUB_OUTPUT" ;;
+              "30 5 * * *")   echo "name=autonomous-investor-discovery" >> "$GITHUB_OUTPUT" ;;
+              "0 6 * * *")    echo "name=competitor-scan" >> "$GITHUB_OUTPUT" ;;
+              "30 6 * * 1")   echo "name=weekly-market-brief" >> "$GITHUB_OUTPUT" ;;
+              "0 6 * * 3")    echo "name=weekly-marketing-discovery" >> "$GITHUB_OUTPUT" ;;
+              "0 6 * * 5")    echo "name=weekly-content-learning" >> "$GITHUB_OUTPUT" ;;
+              "0 7 * * *")    echo "name=daily-founder-brief" >> "$GITHUB_OUTPUT" ;;
+              "0 8 * * *")    echo "name=daily-content-planning" >> "$GITHUB_OUTPUT" ;;
+              "0 * * * *")    echo "name=content-quality-sweep" >> "$GITHUB_OUTPUT" ;;
+              "*/15 * * * *") echo "name=publish-due-content" >> "$GITHUB_OUTPUT" ;;
+              *)              echo "name=" >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
 
       - name: Trigger ${{ steps.job.outputs.name }}
         if: steps.job.outputs.name != ''
