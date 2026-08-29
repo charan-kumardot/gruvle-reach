@@ -79,27 +79,53 @@ list — an account needs billing configured before `/chat/completions` will
 actually serve requests even if `/models` responds; a `payment_required`
 error means that, not a code problem.
 
+## OpenRouter (OpenAI-chat-compatible, has genuinely free models)
+
+```env
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-key
+OPENROUTER_MODEL=minimax/minimax-m3:free
+```
+
+Get a key at [openrouter.ai](https://openrouter.ai) (Keys page). Filter
+[openrouter.ai/models](https://openrouter.ai/models) to `:free` for the
+current free-model list — it changes over time, and a `:free` model routes
+through a shared upstream community pool that can itself be rate-limited
+independently of your own key (`upstream_429` errors with a `Retry-After`
+header, which `request_with_retry` honors) — this is a genuinely separate
+quota from Groq/Cerebras/Gemini, not the same limit under another name.
+
 ## Chaining providers with an explicit priority order
 
 ```env
 AI_PROVIDER=chain
 # uses whichever of these are filled in, in this order:
 GROQ_API_KEY=...
+OPENROUTER_API_KEY=...
 CEREBRAS_API_KEY=...
 GEMINI_API_KEY=...
-OLLAMA_BASE_URL=http://localhost:11434   # always available as the final, quota-free tier
+OLLAMA_BASE_URL=http://localhost:11434   # local-dev only — see note below
 OLLAMA_MODEL=qwen3:8b
 ```
 
-`AI_PROVIDER=chain` selects `ChainAIProvider([Groq, Cerebras, Gemini,
-Ollama])` (`app/providers/ai/factory.py`) — every `AIProvider` call tries
-each configured provider in order and moves to the next on any
+`AI_PROVIDER=chain` selects `ChainAIProvider([Groq, OpenRouter, Cerebras,
+Gemini, Ollama])` (`app/providers/ai/factory.py`) — every `AIProvider` call
+tries each configured provider in order and moves to the next on any
 `AIProviderError` (HTTP error, rate limit, quota exhaustion, timeout) or if
 a tier is simply unconfigured, without the caller needing to know more than
 one provider is involved. `app/providers/ai/utils.py::request_with_retry`
 also gives each individual tier a short retry-with-backoff on a 429 before
 giving up on it — useful for genuine per-minute rate limits, though it can't
-help a per-*day* quota like Gemini's (see above).
+help a per-*day* quota like Gemini's (see above). Once a tier fails, it's
+skipped (not re-attempted) for 60s so a bulk operation (a discovery agent
+can make hundreds of calls) doesn't re-retry an already-known-bad tier on
+every single call — see the cooldown note in `chain_provider.py`.
+
+**Ollama is a local-dev convenience in this chain, not a real production
+fallback** — on a hosted deployment (Render, etc.) there's no local Ollama
+daemon for the app to reach, so that tier will simply fail there too. In
+production the chain is only as deep as however many of the cloud tiers
+above are actually configured and healthy.
 
 ## Any OpenAI-compatible endpoint
 

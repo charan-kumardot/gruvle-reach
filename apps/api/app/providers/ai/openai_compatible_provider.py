@@ -86,3 +86,13 @@ class OpenAICompatibleProvider(_OpenAIChatCompatibleProvider):
 class CerebrasProvider(_OpenAIChatCompatibleProvider):
     def __init__(self, api_key: str, model: str):
         super().__init__(name="cerebras", base_url="https://api.cerebras.ai/v1", api_key=api_key, model=model)
+
+
+class OpenRouterProvider(_OpenAIChatCompatibleProvider):
+    """OpenRouter — an aggregator with several genuinely free models (":free"
+    suffix). Those route through a shared upstream community pool, so they
+    can be independently rate-limited from Groq/Cerebras/Gemini — a
+    different quota to fall back to, not the same one under another name."""
+
+    def __init__(self, api_key: str, model: str):
+        super().__init__(name="openrouter", base_url="https://openrouter.ai/api/v1", api_key=api_key, model=model)

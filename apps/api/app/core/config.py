@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # "chain" tries several providers in order (Groq -> Cerebras -> Gemini ->
     # Ollama), falling through on any unconfigured/failing tier — see
     # app/providers/ai/chain_provider.py and factory.py.
-    ai_provider: Literal["ollama", "groq", "gemini", "cerebras", "chain", "openai_compatible"] = "ollama"
+    ai_provider: Literal["ollama", "groq", "gemini", "cerebras", "openrouter", "chain", "openai_compatible"] = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
     groq_api_key: str = ""
@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.6-flash"
     cerebras_api_key: str = ""
     cerebras_model: str = "gpt-oss-120b"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "minimax/minimax-m3:free"
     openai_compatible_base_url: str = ""
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = ""
