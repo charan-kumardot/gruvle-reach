@@ -165,6 +165,9 @@ class InvestorDiscoveryAgent(BaseAgent):
                 )
 
                 discovered.append(investor)
+                # Commit per-investor rather than once at the end — see the
+                # matching comment in research_agent.py.
+                self.db.commit()
 
         self.db.flush()
         return discovered

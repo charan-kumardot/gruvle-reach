@@ -138,6 +138,9 @@ class CompetitorDiscoveryAgent(BaseAgent):
                 )
 
                 discovered.append(competitor)
+                # Commit per-competitor rather than once at the end — see
+                # the matching comment in research_agent.py.
+                self.db.commit()
 
         self.db.flush()
         return discovered

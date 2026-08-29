@@ -60,21 +60,30 @@ export function useBootstrap() {
  * a background thread (see app/core/background.py — a synchronous version
  * used to time out on Render's free tier once queries got broad enough).
  * There's no synchronous result to show, so poll the relevant list query
- * for a bit after starting so results appear without a manual refresh. */
-export function usePollAfterAction(invalidate: () => void, durationMs = 75_000) {
+ * for a while after starting so results appear without a manual refresh.
+ *
+ * A full discovery run (many search queries x many AI-classification calls)
+ * can genuinely take several minutes — observed ~9-10 minutes live once
+ * broadened query sets got involved. The underlying agents now commit each
+ * result as it's found rather than in one batch at the end (see
+ * research_agent.py and siblings), so results trickle in progressively
+ * during that window instead of appearing all at once at the very end. An
+ * earlier, much shorter polling window (75s) made a still-working run look
+ * broken once the "checking for results" indicator silently gave up. */
+export function usePollAfterAction(invalidate: () => void, durationMs = 12 * 60_000, intervalMs = 8_000) {
   const [polling, setPolling] = useState(false);
   const invalidateRef = useRef(invalidate);
   invalidateRef.current = invalidate;
 
   useEffect(() => {
     if (!polling) return;
-    const interval = setInterval(() => invalidateRef.current(), 5000);
+    const interval = setInterval(() => invalidateRef.current(), intervalMs);
     const timeout = setTimeout(() => setPolling(false), durationMs);
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [polling, durationMs]);
+  }, [polling, durationMs, intervalMs]);
 
   return { polling, start: () => setPolling(true) };
 }

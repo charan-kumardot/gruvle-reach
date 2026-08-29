@@ -49,7 +49,7 @@ export default function CompetitorsPage() {
   const discover = useMutation({
     mutationFn: () => api.post<{ status: string }>(`/workspaces/${workspace!.id}/competitors/discover?product_id=${product?.id}`),
     onSuccess: () => {
-      toast.success("Discovery started — new competitors will appear below over the next minute or so");
+      toast.success("Discovery started — can take several minutes for a full pass; new competitors will appear below as they're found");
       startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Competitor discovery failed"),
@@ -75,7 +75,7 @@ export default function CompetitorsPage() {
       />
 
       {polling && (
-        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new competitors…</p>
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running — this can take several minutes for a full pass; new competitors will appear below as they're found, no need to stay on this page.</p>
       )}
 
       {competitors && competitors.length > 0 ? (

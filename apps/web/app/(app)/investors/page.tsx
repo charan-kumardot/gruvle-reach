@@ -50,7 +50,7 @@ export default function InvestorsPage() {
     mutationFn: () =>
       api.post<{ status: string }>(`/workspaces/${workspace!.id}/products/${product!.id}/discover-investors`),
     onSuccess: () => {
-      toast.success("Discovery started — new investors will appear in the directory over the next minute or so, then click Compute matches");
+      toast.success("Discovery started — can take several minutes for a full pass; new investors will appear in the directory as they're found, then click Compute matches");
       startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Investor discovery failed"),
@@ -86,7 +86,7 @@ export default function InvestorsPage() {
       />
 
       {polling && (
-        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new investors…</p>
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running — this can take several minutes for a full pass; new investors will appear in the directory as they're found, no need to stay on this page.</p>
       )}
 
       {sortedMatches.length > 0 ? (

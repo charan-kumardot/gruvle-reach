@@ -159,6 +159,12 @@ class ResearchAgent(BaseAgent):
                 company.icp_fit_factors = factors
 
                 discovered.append(company)
+                # Commit per-company rather than once at the end of the whole
+                # run — a full discovery pass can take several minutes (many
+                # queries x many candidates), and founders watching the UI
+                # saw nothing appear until it finished, with no results at
+                # all if the process was killed partway through.
+                self.db.commit()
 
         self.db.flush()
         return discovered

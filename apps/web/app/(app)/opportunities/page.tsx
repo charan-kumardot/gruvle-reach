@@ -61,7 +61,7 @@ export default function OpportunitiesPage() {
         `/workspaces/${workspace!.id}/opportunities/discover-marketing?product_id=${product!.id}`
       ),
     onSuccess: () => {
-      toast.success("Discovery started — new opportunities will appear below over the next minute or so");
+      toast.success("Discovery started — can take several minutes for a full pass; new opportunities will appear below as they're found");
       startPolling();
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Marketing discovery failed"),
@@ -82,7 +82,7 @@ export default function OpportunitiesPage() {
       />
 
       {polling && (
-        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running in the background — checking for new opportunities…</p>
+        <p className="mb-3 text-xs text-[var(--muted-foreground)]">Discovery running — this can take several minutes for a full pass; new opportunities will appear below as they're found, no need to stay on this page.</p>
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">

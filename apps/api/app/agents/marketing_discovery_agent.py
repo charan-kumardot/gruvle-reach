@@ -159,6 +159,9 @@ class MarketingDiscoveryAgent(BaseAgent):
                 )
 
                 discovered.append(opportunity)
+                # Commit per-opportunity rather than once at the end — see
+                # the matching comment in research_agent.py.
+                self.db.commit()
 
         self.db.flush()
         return discovered
@@ -239,6 +242,9 @@ class MarketingDiscoveryAgent(BaseAgent):
                 )
 
                 discovered.append(opportunity)
+                # Commit per-opportunity rather than once at the end — see
+                # the matching comment in research_agent.py.
+                self.db.commit()
 
         self.db.flush()
         return discovered
