@@ -1,8 +1,12 @@
 """
-Background tasks (§66, §77 — never run research jobs inline in an HTTP
-request). Every task here only writes recommendations/data; nothing sends or
-publishes externally without a subsequent human-approval step through the
-API (§67, §70).
+Scheduled jobs (§66, §77 — every job here only writes recommendations/data;
+nothing sends or publishes externally without a subsequent human-approval
+step through the API, §67/§70). These are plain functions, not Celery
+tasks — they're invoked by the secured `/cron/*` endpoints
+(`app/api/routers/cron.py`), each spawned in its own background thread so
+the triggering HTTP request returns immediately rather than blocking for
+the duration of a potentially slow scan across every workspace. See
+CLAUDE.md for how the actual schedule (GitHub Actions cron) is wired up.
 """
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,10 +18,8 @@ from app.db.models.product import Product
 from app.db.models.tenancy import Workspace
 from app.db.session import SessionLocal
 from app.providers.ai.factory import get_ai_provider
-from app.workers.celery_app import celery_app
 
 
-@celery_app.task
 def generate_daily_briefs_for_all_workspaces() -> int:
     db: Session = SessionLocal()
     count = 0
@@ -32,7 +34,6 @@ def generate_daily_briefs_for_all_workspaces() -> int:
     return count
 
 
-@celery_app.task
 def scan_all_competitors() -> int:
     db: Session = SessionLocal()
     count = 0
@@ -49,7 +50,6 @@ def scan_all_competitors() -> int:
     return count
 
 
-@celery_app.task
 def generate_weekly_market_briefs() -> int:
     """Placeholder for §33's Weekly Market Brief — composes from existing
     evidence/triggers/competitor changes rather than a fresh AI call, to stay
@@ -63,32 +63,6 @@ def generate_weekly_market_briefs() -> int:
         db.close()
 
 
-@celery_app.task
-def discover_companies_task(workspace_id: str, product_id: str, queries: list[str]) -> int:
-    """Async entry point for the (potentially slow) company-discovery agent,
-    so the API route can enqueue it instead of blocking an HTTP request."""
-    import uuid
-
-    from app.agents.research_agent import ResearchAgent
-    from app.agents.trigger_agent import TriggerAgent
-    from app.db.models.company import CompanySignal
-    from app.providers.search.factory import get_search_provider
-
-    db: Session = SessionLocal()
-    try:
-        agent = ResearchAgent(db, get_ai_provider(), get_search_provider())
-        companies = agent.discover_companies(workspace_id=uuid.UUID(workspace_id), product_id=uuid.UUID(product_id), queries=queries)
-        trigger_agent = TriggerAgent(db)
-        for company in companies:
-            signals = db.execute(select(CompanySignal).where(CompanySignal.company_id == company.id)).scalars().all()
-            trigger_agent.detect_triggers(company, signals)
-        db.commit()
-        return len(companies)
-    finally:
-        db.close()
-
-
-@celery_app.task
 def discover_customers_for_all_products() -> int:
     """§22 daily autonomous customer discovery — zero-input, derives its own
     queries per product via the research orchestrator."""
@@ -117,7 +91,6 @@ def discover_customers_for_all_products() -> int:
     return count
 
 
-@celery_app.task
 def discover_investors_for_all_products() -> int:
     """§22 daily autonomous investor discovery."""
     from app.agents.investor_discovery_agent import InvestorDiscoveryAgent
@@ -147,7 +120,6 @@ def discover_investors_for_all_products() -> int:
     return total
 
 
-@celery_app.task
 def plan_and_generate_daily_content() -> int:
     """§2-4 daily content planning — zero-input, bounded (MAX_DAILY_CONTENT_ITEMS),
     mix-balanced. Reactive/competitive ideas land APPROVAL_REQUIRED and are
@@ -191,7 +163,6 @@ def plan_and_generate_daily_content() -> int:
     return total
 
 
-@celery_app.task
 def run_content_quality_scan() -> int:
     """§28-29 hourly safety net — re-gates any DRAFT/READY variant still
     sitting there after a couple of hours, covering the regenerate/manual-
@@ -231,7 +202,6 @@ def run_content_quality_scan() -> int:
     return count
 
 
-@celery_app.task
 def publish_due_content() -> int:
     """§18-20 — publishes SCHEDULED content whose scheduled_at has passed.
     A channel that isn't connected leaves the variant SCHEDULED and just
@@ -292,7 +262,6 @@ def publish_due_content() -> int:
     return count
 
 
-@celery_app.task
 def run_content_learning() -> int:
     """§22 weekly content-performance learning."""
     from app.agents.learning_agent import run_content_learning_analysis
@@ -314,7 +283,6 @@ def run_content_learning() -> int:
     return total
 
 
-@celery_app.task
 def discover_marketing_opportunities_for_all_products() -> int:
     """§22 weekly autonomous marketing-opportunity discovery."""
     from app.agents.marketing_discovery_agent import MarketingDiscoveryAgent

@@ -153,7 +153,7 @@ def _brand_message_ideas(brand: BrandBrain | None) -> list[dict]:
 def plan_daily_content(db: Session, *, workspace_id: uuid.UUID, product_id: uuid.UUID, brand: BrandBrain | None) -> list[dict]:
     """Returns up to MAX_DAILY_CONTENT_ITEMS idea dicts:
     {idea, content_type, cta_hint, origin, source_opportunity_id}. Does not
-    call AI and does not write to the DB — the caller (a Celery task or the
+    call AI and does not write to the DB — the caller (a scheduled job or the
     /content/plan-today route) generates variants per idea and marks any
     Opportunity used here as "actioned" once consumed."""
     under_quota = _under_quota_types(db, workspace_id=workspace_id, product_id=product_id)

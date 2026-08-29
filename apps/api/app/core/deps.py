@@ -6,13 +6,15 @@ Every router that touches workspace-scoped data must depend on
 a workspace_id supplied by the client — this is the one place tenant
 isolation is enforced, and it is enforced server-side on every request.
 """
+import secrets
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.security import decode_access_token
 from app.db.models.enums import OrgRole
 from app.db.models.tenancy import OrganizationMember, User, Workspace
@@ -87,6 +89,17 @@ def require_workspace_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     return WorkspaceContext(workspace=workspace, membership=membership, user=user)
+
+
+def require_cron_secret(x_cron_secret: Annotated[str | None, Header()] = None) -> None:
+    """Auth for the scheduled-job trigger endpoints (`/cron/*`) — these
+    replace Celery beat, so they're the one place a non-user caller (an
+    external scheduler) needs to authenticate. A blank configured secret
+    always rejects, rather than accepting any/no header — never "open by
+    default" just because CRON_SECRET hasn't been set yet."""
+    configured = get_settings().cron_secret
+    if not configured or not x_cron_secret or not secrets.compare_digest(x_cron_secret, configured):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing cron secret")
 
 
 def require_workspace_role(minimum_role: OrgRole):

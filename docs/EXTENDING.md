@@ -60,8 +60,10 @@ research data, a search result, or user input.
 The schema already has what a learning engine needs: `ICPProfile.score`,
 `Company.icp_fit_score`, `Outreach.status` outcomes, `OutreachEvent` (sent/
 opened/replied), and `campaign_metrics` conversions. A natural next step is
-a scheduled task (add to `app/workers/tasks.py` + `celery_app.py`'s beat
-schedule) that groups outreach/companies by ICP or segment, computes
+a scheduled task (add a plain function to `app/workers/tasks.py`, then add
+it to the `_JOBS` mapping in `app/api/routers/cron.py` and a schedule entry
+in `.github/workflows/scheduled-tasks.yml` — see `CLAUDE.md`) that groups
+outreach/companies by ICP or segment, computes
 response-rate deltas, and writes a `Recommendation`-style row — store the
 hypothesis, sample size, result, and confidence explicitly (per the
 product's anti-overfitting principle) rather than silently re-ranking

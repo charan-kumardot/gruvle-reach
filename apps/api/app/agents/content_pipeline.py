@@ -1,6 +1,6 @@
 """
 Shared idea->variants->quality-gate pipeline used by the /content router,
-the /campaigns router, and the Celery daily-content tasks — factored out
+the /campaigns router, and the daily-content scheduled jobs — factored out
 so background tasks don't have to reach into the API layer to reuse it.
 """
 import uuid

@@ -26,7 +26,7 @@ real Groq model — see [docs/SETUP.md](docs/SETUP.md) for how to reproduce.
 ## Quick start
 
 **Requirements:** Python 3.12+, Node 20+, PostgreSQL (or a Supabase project),
-Docker (optional, for Redis/SearxNG), and either [Ollama](https://ollama.com)
+Docker (optional, for SearxNG), and either [Ollama](https://ollama.com)
 running locally (free, default) or a Groq API key (free tier available).
 
 ```bash
@@ -46,8 +46,8 @@ cd apps/web
 npm install
 npm run dev
 
-# 4. Optional: bring up Redis + self-hosted search (new terminal, from repo root)
-docker compose up -d redis searxng
+# 4. Optional: bring up self-hosted search (new terminal, from repo root)
+docker compose up -d searxng
 
 # 5. Optional: seed demo data (clearly marked, isolated workspace)
 cd apps/api && python ../../scripts/seed_demo.py
@@ -73,7 +73,7 @@ Full setup detail, including Ollama model selection, is in
 - **Frontend:** Next.js (App Router) · TypeScript · Tailwind CSS · Radix UI · Framer Motion
 - **Backend:** FastAPI · SQLAlchemy 2 · Alembic · Pydantic
 - **Database:** PostgreSQL
-- **Queue:** Redis · Celery
+- **Scheduling:** GitHub Actions cron → secured `/cron/*` HTTP endpoints (no queue/broker — see `CLAUDE.md`)
 - **AI:** Provider abstraction — Ollama (default, local, free), Groq, or any OpenAI-compatible endpoint
 - **Search:** Provider abstraction — self-hosted SearxNG (default, free), RSS/Atom, or manual URL submission
 

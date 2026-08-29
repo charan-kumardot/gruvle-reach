@@ -3,7 +3,7 @@ import time
 import httpx
 
 from app.providers.ai.base import AIGenerationResult, AIProvider, AIProviderError
-from app.providers.ai.utils import extract_json
+from app.providers.ai.utils import extract_json, request_with_retry
 
 
 class _OpenAIChatCompatibleProvider(AIProvider):
@@ -33,15 +33,19 @@ class _OpenAIChatCompatibleProvider(AIProvider):
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
-        started = time.perf_counter()
-        try:
-            resp = httpx.post(
+        def _post() -> httpx.Response:
+            r = httpx.post(
                 f"{self._base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json=payload,
                 timeout=60,
             )
-            resp.raise_for_status()
+            r.raise_for_status()
+            return r
+
+        started = time.perf_counter()
+        try:
+            resp = request_with_retry(_post)
         except httpx.HTTPError as exc:
             raise AIProviderError(f"{self.name} request failed: {exc}") from exc
         latency_ms = (time.perf_counter() - started) * 1000
@@ -77,3 +81,8 @@ class GroqProvider(_OpenAIChatCompatibleProvider):
 class OpenAICompatibleProvider(_OpenAIChatCompatibleProvider):
     def __init__(self, base_url: str, api_key: str, model: str):
         super().__init__(name="openai_compatible", base_url=base_url, api_key=api_key, model=model)
+
+
+class CerebrasProvider(_OpenAIChatCompatibleProvider):
+    def __init__(self, api_key: str, model: str):
+        super().__init__(name="cerebras", base_url="https://api.cerebras.ai/v1", api_key=api_key, model=model)

@@ -1,0 +1,70 @@
+name: Scheduled tasks
+
+# Replaces Celery beat (Render's free plan won't run a `type: worker`
+# service — see CLAUDE.md). Each `schedule:` entry below fires its own
+# workflow run with `github.event.schedule` set to that cron string; the
+# single job dispatches to the matching /cron/{job} endpoint. Times are UTC
+# and match the original Celery beat_schedule 1:1 (see CLAUDE.md/celery_app
+# git history) so the intent stays easy to cross-reference.
+#
+# Timing is best-effort: GitHub can delay scheduled workflows under load.
+# Fine for daily/weekly jobs; if publish-due-content or the hourly quality
+# sweep ever need tighter precision, point a free external pinger (e.g.
+# cron-job.org) at the same secured endpoint instead — no code change needed.
+
+on:
+  workflow_dispatch: {} # manual "Run workflow" button, for testing
+  schedule:
+    - cron: "0 5 * * *"    # autonomous-customer-discovery   — 05:00 UTC daily
+    - cron: "30 5 * * *"   # autonomous-investor-discovery   — 05:30 UTC daily
+    - cron: "0 6 * * *"    # competitor-scan                 — 06:00 UTC daily
+    - cron: "30 6 * * 1"   # weekly-market-brief             — Monday 06:30 UTC
+    - cron: "0 6 * * 3"    # weekly-marketing-discovery      — Wednesday 06:00 UTC
+    - cron: "0 6 * * 5"    # weekly-content-learning         — Friday 06:00 UTC
+    - cron: "0 7 * * *"    # daily-founder-brief             — 07:00 UTC daily
+    - cron: "0 8 * * *"    # daily-content-planning          — 08:00 UTC daily
+    - cron: "0 * * * *"    # content-quality-sweep           — hourly
+    - cron: "*/15 * * * *" # publish-due-content              — every 15 min
+
+env:
+  API_BASE_URL: https://gruvle-reach-api.onrender.com/api/v1
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine job from trigger
+        id: job
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 5 * * *")    echo "name=autonomous-customer-discovery" >> "$GITHUB_OUTPUT" ;;
+            "30 5 * * *")   echo "name=autonomous-investor-discovery" >> "$GITHUB_OUTPUT" ;;
+            "0 6 * * *")    echo "name=competitor-scan" >> "$GITHUB_OUTPUT" ;;
+            "30 6 * * 1")   echo "name=weekly-market-brief" >> "$GITHUB_OUTPUT" ;;
+            "0 6 * * 3")    echo "name=weekly-marketing-discovery" >> "$GITHUB_OUTPUT" ;;
+            "0 6 * * 5")    echo "name=weekly-content-learning" >> "$GITHUB_OUTPUT" ;;
+            "0 7 * * *")    echo "name=daily-founder-brief" >> "$GITHUB_OUTPUT" ;;
+            "0 8 * * *")    echo "name=daily-content-planning" >> "$GITHUB_OUTPUT" ;;
+            "0 * * * *")    echo "name=content-quality-sweep" >> "$GITHUB_OUTPUT" ;;
+            "*/15 * * * *") echo "name=publish-due-content" >> "$GITHUB_OUTPUT" ;;
+            *)              echo "name=" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Manual dispatch job selection
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Manual run — pass a job via workflow_dispatch inputs if you add one, or trigger all jobs by re-running this step per job name."
+
+      - name: Trigger ${{ steps.job.outputs.name }}
+        if: steps.job.outputs.name != ''
+        run: |
+          set -e
+          job="${{ steps.job.outputs.name }}"
+          echo "Triggering $job"
+          status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" -X POST \
+            "$API_BASE_URL/cron/$job" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          cat /tmp/resp.txt
+          if [ "$status" -ge 300 ]; then
+            echo "Trigger failed with HTTP $status"
+            exit 1
+          fi

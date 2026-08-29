@@ -1,6 +1,8 @@
-# Render deployment for the API + worker. Free-first: the web app deploys
-# separately to Vercel (see vercel.json); Postgres and Redis can be Render's
-# free-tier managed services or an external provider (e.g. Supabase for Postgres).
+# Render deployment for the API. Free-first: the web app deploys separately
+# to Vercel (see vercel.json); Postgres is Supabase (see CLAUDE.md). Scheduled
+# jobs (previously a `type: worker` running Celery beat — Render's free plan
+# rejects that service type) now run via the secured /cron/* endpoints below,
+# triggered by GitHub Actions cron (.github/workflows/scheduled-tasks.yml).
 services:
   - type: web
     name: gruvle-reach-api
@@ -12,43 +14,19 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: gruvle-reach-redis
-          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: ENCRYPTION_KEY
         sync: false
+      - key: CRON_SECRET
+        sync: false
       - key: SEARXNG_BASE_URL
         sync: false
       - key: AI_PROVIDER
-        value: groq
+        value: chain
       - key: GROQ_API_KEY
         sync: false
-
-  - type: worker
-    name: gruvle-reach-worker
-    runtime: docker
-    dockerfilePath: ./apps/api/Dockerfile
-    dockerContext: ./apps/api
-    dockerCommand: celery -A app.workers.celery_app worker --beat --loglevel=info
-    plan: free
-    envVars:
-      - key: DATABASE_URL
+      - key: CEREBRAS_API_KEY
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: gruvle-reach-redis
-          property: connectionString
-      - key: SECRET_KEY
+      - key: GEMINI_API_KEY
         sync: false
-      - key: ENCRYPTION_KEY
-        sync: false
-
-  - type: redis
-    name: gruvle-reach-redis
-    plan: free
-    ipAllowList: []

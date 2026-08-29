@@ -31,21 +31,34 @@ clean up after themselves specifically because of this — but there is no
 separate staging/test database to fall back on. Treat every migration and
 every manual DB write as a production action.
 
-**Render's free plan silently drops the Celery beat scheduler.** `render.yaml`
-declares a `type: worker` service (`gruvle-reach-worker`) running
-`celery -A app.workers.celery_app worker --beat`, and `docker-compose.yml`
-runs the same thing locally — but Render's API rejects `background_worker`
-services on the free plan ("only web services allowed for plan"). That
-worker has never successfully deployed to production. **Every entry in
-`celery_app.py`'s `beat_schedule` — daily founder brief, competitor scan,
-autonomous customer/investor discovery, daily content planning, scheduled
-publish, weekly learning, everything — currently only runs if you run the
-worker yourself (e.g. locally, or via `docker compose up worker`).** Nothing
-here runs automatically in production today. Don't assume a scheduled task
-has been firing; check whether the worker is actually deployed before
-trusting time-based claims about production state. Fixing this for real
-means either upgrading the Render plan or moving beat to something the free
-tier allows.
+**Scheduled jobs run via GitHub Actions cron hitting secured HTTP endpoints,
+not Celery.** Render's free plan rejects a `type: worker` service ("only web
+services allowed for plan"), so the `gruvle-reach-worker`/Celery-beat setup
+that used to be here never actually ran in production — see git history
+around `.github/workflows/scheduled-tasks.yml` if you need the full story.
+It's been replaced: `app/workers/tasks.py` holds the same plain functions
+(daily founder brief, competitor scan, autonomous customer/investor/
+marketing discovery, daily content planning, the hourly quality sweep, the
+15-minute publish check, weekly learning), each exposed at
+`POST /api/v1/cron/{job-name}` (`app/api/routers/cron.py`, job names listed
+there) behind `require_cron_secret` (`app/core/deps.py`) — a shared secret
+compared via `Header("X-Cron-Secret")`, rejecting every request if
+`CRON_SECRET` isn't set (never "open by default"). `.github/workflows/
+scheduled-tasks.yml` fires on the same schedule the old `beat_schedule` used
+and calls the matching endpoint with a `CRON_SECRET` GitHub Actions repo
+secret. **Both must be configured for this to actually run**: `CRON_SECRET`
+as a Render env var on `gruvle-reach-api` (same value), and as a GitHub
+Actions repository secret (Settings → Secrets and variables → Actions) —
+until both are set to the same value, every scheduled trigger 401s. Timing
+is best-effort (GitHub can delay scheduled workflows under load); fine for
+daily/weekly jobs, and acceptable for the 15-minute/hourly ones too unless
+you need tighter precision, in which case point a free external pinger
+(cron-job.org or similar) at the same endpoint instead — no code change
+needed, it's just another caller of the same secured route. Don't assume a
+scheduled task has been firing in production; check the GitHub Actions run
+history for `scheduled-tasks.yml` and the Render logs for `cron job ...
+completed`/`failed` lines before trusting time-based claims about production
+state.
 
 **Alembic migrations already applied to that shared database are permanent.**
 Once a migration file is committed and pushed, never edit or delete it —
@@ -110,6 +123,24 @@ feature ever returns suspiciously empty results again, check which
 provider is actually configured before assuming the bug is in this repo's
 agent code.
 
+**The AI provider is a chain (Groq → Cerebras → Gemini → Ollama), not one
+provider — because any single free tier runs out under real load.**
+`AI_PROVIDER=chain` (`app/providers/ai/chain_provider.py`) tries each
+configured provider in order and falls through to the next on any failure
+(HTTP error, rate limit, quota exhaustion) or if a tier is unconfigured.
+Two gotchas found live, not obvious from the code: **Gemini's free tier for
+`gemini-3.6-flash` is 20 requests per DAY** (a `RESOURCE_EXHAUSTED` /
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier` quota — confirmed via
+the actual error body; no amount of waiting/retrying helps until the daily
+window resets), so it contributes little in practice once the tiers ahead
+of it in the chain are working; and the configured **Cerebras account needs
+billing set up** before `/chat/completions` will serve anything (`/models`
+responds fine, completions return `payment_required`) — that tier is a
+harmless no-op until then. Every tier gets one short retry-with-backoff on
+a 429 (`app/providers/ai/utils.py::request_with_retry`) before giving up on
+it, which helps genuine per-minute limits but can't fix a per-day one. See
+`docs/AI_PROVIDERS.md` and `CURRENT_STATUS.md`'s 2026-08-29 entry.
+
 ## Conventions this codebase actually follows
 
 - **Provider abstraction, everywhere.** Every external dependency (AI, search,
@@ -140,14 +171,15 @@ agent code.
   used for this: insert a row in `PENDING`/`RENDERING` state and commit fast,
   do the heavy work in a background `threading.Thread` with its own
   `SessionLocal()`, and run a periodic "mark stale rows FAILED after N minutes
-  of no `updated_at` progress" sweep as a self-healing safety net. Reach for
-  this (or, better, get the Celery worker actually deployed) before adding
-  new heavy synchronous work to a request handler.
+  of no `updated_at` progress" sweep as a self-healing safety net. This is
+  also exactly how `/api/v1/cron/{job}` (see above) avoids blocking on a
+  potentially slow scheduled scan. Reach for this before adding new heavy
+  synchronous work to a request handler.
 - **Delete features completely.** When something is removed, remove the
-  models, migrations-going-forward, routes, agents, workers, beat schedule
-  entries, frontend pages/nav/types, config settings, and dependencies — not
-  just the entry point. No commented-out code, no unused abstractions left
-  "in case it comes back."
+  models, migrations-going-forward, routes, agents, `app/workers/tasks.py`
+  entries + their `/cron/{job}` mapping, frontend pages/nav/types, config
+  settings, and dependencies — not just the entry point. No commented-out
+  code, no unused abstractions left "in case it comes back."
 
 ## Dev commands
 
@@ -166,12 +198,13 @@ npm run dev                       # http://localhost:3000
 npm run build                     # production build + typecheck
 npm run lint
 
-# Optional local services (Redis + self-hosted SearxNG; Postgres only if not using Supabase)
-docker compose up -d redis searxng
+# Optional local services (self-hosted SearxNG; Postgres only if not using Supabase)
+docker compose up -d searxng
 docker compose --profile local-db up -d postgres
 
-# Celery worker + beat (nothing runs on a schedule without this — see above)
-cd apps/api && celery -A app.workers.celery_app worker --beat --loglevel=info
+# Trigger a scheduled job locally (see "Scheduled jobs run via GitHub Actions
+# cron..." above) — requires CRON_SECRET set in apps/api/.env
+curl -X POST http://localhost:8000/api/v1/cron/daily-founder-brief -H "X-Cron-Secret: $CRON_SECRET"
 ```
 
 ## Windows / git-bash quirks hit repeatedly in this repo

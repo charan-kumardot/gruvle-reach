@@ -6,7 +6,7 @@
 - Node.js 20+
 - A PostgreSQL database (a free Supabase project works — this repo was
   built and tested against one)
-- Docker, for Redis and the self-hosted SearxNG search backend (optional but
+- Docker, for the self-hosted SearxNG search backend (optional but
   recommended)
 - [Ollama](https://ollama.com) installed locally if you want the default,
   fully-free AI path — otherwise a Groq API key (free tier)
@@ -78,14 +78,19 @@ npm run dev
 
 `apps/web/.env.local` should have `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`.
 
-## 5. Background workers (optional for local dev)
+## 5. Scheduled jobs (optional for local dev)
+
+Scheduled jobs (daily founder brief, discovery, content planning, etc.) run
+via secured HTTP endpoints, not a background worker process — see
+`CLAUDE.md`. Trigger one locally:
 
 ```bash
 cd apps/api
-celery -A app.workers.celery_app worker --beat --loglevel=info
+curl -X POST http://localhost:8000/api/v1/cron/daily-founder-brief -H "X-Cron-Secret: $CRON_SECRET"
 ```
 
-Needs `REDIS_URL` (bring one up with `docker compose up -d redis`).
+Needs `CRON_SECRET` set in `.env`. In production, `.github/workflows/
+scheduled-tasks.yml` calls these same endpoints on a schedule.
 
 ## 6. Demo data
 
@@ -108,9 +113,9 @@ demo@gruvle-reach.io / demo12345
 docker compose up -d --build
 ```
 
-Brings up Redis, SearxNG, the API, a Celery worker, and the web app. Postgres
-is optional (`docker compose --profile local-db up -d postgres`) if you'd
-rather not use a managed database.
+Brings up SearxNG, the API, and the web app. Postgres is optional
+(`docker compose --profile local-db up -d postgres`) if you'd rather not use
+a managed database.
 
 ## Running tests
 

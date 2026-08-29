@@ -19,16 +19,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   # Free, self-hosted, no-API-key metasearch engine used by the default SearchProvider.
   searxng:
     image: searxng/searxng:latest
@@ -45,26 +35,10 @@ services:
       context: ./apps/api
     env_file: .env
     environment:
-      REDIS_URL: redis://redis:6379/0
       SEARXNG_BASE_URL: http://searxng:8080
     ports:
       - "8000:8000"
     depends_on:
-      - redis
-      - searxng
-    volumes:
-      - ./apps/api:/app
-
-  worker:
-    build:
-      context: ./apps/api
-    command: celery -A app.workers.celery_app worker --beat --loglevel=info
-    env_file: .env
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      SEARXNG_BASE_URL: http://searxng:8080
-    depends_on:
-      - redis
       - searxng
     volumes:
       - ./apps/api:/app

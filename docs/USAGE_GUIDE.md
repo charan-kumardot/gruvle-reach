@@ -367,7 +367,7 @@ sequenceDiagram
 | Sending outreach email | An `EMAIL_PROVIDER` | Resend free tier or your own SMTP | `.env` → `EMAIL_PROVIDER`, `RESEND_API_KEY` / `SMTP_*` |
 | Auto-publishing content instead of copy-paste | A social provider's client ID/secret, then a connected access token per workspace | None are free-tier-friendly (each requires a registered developer app) | `.env` → `{PROVIDER}_CLIENT_ID/SECRET`, then `POST /integrations/{provider}/connect` |
 | Turning a Visibility finding into a real pull request | A GitHub fine-grained PAT (repo contents + PRs) | Free (your own GitHub account) | `POST /integrations/github/connect` with `{"credential_payload": {"pat": "..."}}` |
-| Anything running automatically on a schedule, without a person triggering it | A running Celery worker (`celery -A app.workers.celery_app worker --beat`) | Free locally; **not currently possible on Render's free plan** — see `CURRENT_STATUS.md` | `docker compose up worker` locally |
+| Anything running automatically on a schedule, without a person triggering it | `CRON_SECRET` set identically on Render and as a GitHub Actions repo secret | Free — GitHub Actions cron calls the app's own `/cron/*` endpoints | See `CLAUDE.md`'s scheduled-jobs note and `.github/workflows/scheduled-tasks.yml`; locally, `curl -X POST .../api/v1/cron/{job} -H "X-Cron-Secret: ..."` |
 
 Nothing in the table above is required to start — every feature works
 manually-triggered with zero paid credentials, per the provider-abstraction

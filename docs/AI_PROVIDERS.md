@@ -45,6 +45,62 @@ Get a key at [console.groq.com](https://console.groq.com). Groq's available
 model list changes over time — check `GET https://api.groq.com/openai/v1/models`
 with your key if `GROQ_MODEL`'s default stops working, and update it.
 
+## Gemini
+
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+Get a key at [aistudio.google.com](https://aistudio.google.com/apikey). Note
+the free tier can be very restrictive per-model — e.g. `gemini-3.6-flash`
+was observed capped at 20 requests/**day** (a `RESOURCE_EXHAUSTED` /
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier` quota, not a per-minute
+one — waiting doesn't help until the daily window resets), which makes it a
+poor sole/primary provider for anything that makes more than a handful of
+calls a day. See "Chaining providers" below for a way to use it without that
+becoming a hard limit on the whole app. Gemini's available model list also
+changes over time — check
+`GET https://generativelanguage.googleapis.com/v1beta/models?key=...` if
+`GEMINI_MODEL`'s default stops working.
+
+## Cerebras (OpenAI-chat-compatible)
+
+```env
+AI_PROVIDER=cerebras
+CEREBRAS_API_KEY=your-key
+CEREBRAS_MODEL=gpt-oss-120b
+```
+
+Get a key at [cloud.cerebras.ai](https://cloud.cerebras.ai). Check
+`GET https://api.cerebras.ai/v1/models` with your key for the current model
+list — an account needs billing configured before `/chat/completions` will
+actually serve requests even if `/models` responds; a `payment_required`
+error means that, not a code problem.
+
+## Chaining providers with an explicit priority order
+
+```env
+AI_PROVIDER=chain
+# uses whichever of these are filled in, in this order:
+GROQ_API_KEY=...
+CEREBRAS_API_KEY=...
+GEMINI_API_KEY=...
+OLLAMA_BASE_URL=http://localhost:11434   # always available as the final, quota-free tier
+OLLAMA_MODEL=qwen3:8b
+```
+
+`AI_PROVIDER=chain` selects `ChainAIProvider([Groq, Cerebras, Gemini,
+Ollama])` (`app/providers/ai/factory.py`) — every `AIProvider` call tries
+each configured provider in order and moves to the next on any
+`AIProviderError` (HTTP error, rate limit, quota exhaustion, timeout) or if
+a tier is simply unconfigured, without the caller needing to know more than
+one provider is involved. `app/providers/ai/utils.py::request_with_retry`
+also gives each individual tier a short retry-with-backoff on a 429 before
+giving up on it — useful for genuine per-minute rate limits, though it can't
+help a per-*day* quota like Gemini's (see above).
+
 ## Any OpenAI-compatible endpoint
 
 ```env

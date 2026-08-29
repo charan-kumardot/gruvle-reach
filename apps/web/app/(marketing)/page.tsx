@@ -188,7 +188,7 @@ export default function LandingPage() {
             <CardContent className="p-6">
               <p className="text-sm font-medium">Self-hosted</p>
               <p className="mt-1 text-2xl font-semibold">Free</p>
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">Ollama + your own Postgres/Redis</p>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">Ollama + your own Postgres</p>
               <ul className="mt-4 flex flex-col gap-2 text-xs text-[var(--muted-foreground)]">
                 {["Full core loop", "Self-hosted search (SearxNG)", "Unlimited workspaces", "Community support"].map((f) => (
                   <li key={f} className="flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-[var(--success)]" /> {f}</li>

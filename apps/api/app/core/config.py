@@ -31,21 +31,27 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "insecure-dev-key-change-me"
     encryption_key: str = ""  # Fernet key; if blank, credential encryption is disabled (dev only)
+    cron_secret: str = ""  # shared secret for the /cron/* endpoints; if blank, every cron trigger is rejected
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/gruvle_reach"
     database_url_direct: str = ""
-
-    redis_url: str = "redis://localhost:6379/0"
 
     web_base_url: str = "http://localhost:3000"
     api_base_url: str = "http://localhost:8000"
 
     # AI provider
-    ai_provider: Literal["ollama", "groq", "openai_compatible"] = "ollama"
+    # "chain" tries several providers in order (Groq -> Cerebras -> Gemini ->
+    # Ollama), falling through on any unconfigured/failing tier — see
+    # app/providers/ai/chain_provider.py and factory.py.
+    ai_provider: Literal["ollama", "groq", "gemini", "cerebras", "chain", "openai_compatible"] = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
+    cerebras_api_key: str = ""
+    cerebras_model: str = "gpt-oss-120b"
     openai_compatible_base_url: str = ""
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = ""

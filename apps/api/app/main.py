@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,6 +12,7 @@ from app.api.routers import (
     companies,
     competitors,
     content,
+    cron,
     growth,
     integrations,
     investors,
@@ -22,6 +25,12 @@ from app.api.routers import (
     visibility,
 )
 from app.core.config import get_settings
+
+# Uncaught scheduled-job outcomes (see app/api/routers/cron.py) are logged at
+# INFO — without a root config, they're silently swallowed since no handler
+# is attached by default, which would make Render's logs useless for
+# confirming a cron trigger actually ran (see CLAUDE.md).
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 settings = get_settings()
 
@@ -53,6 +62,7 @@ for router in (
     brand.router,
     research.router,
     growth.router,
+    cron.router,
     actions.router,
     analytics.router,
     integrations.router,
